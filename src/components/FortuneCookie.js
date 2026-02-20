@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFortuneMessage } from '../data/fortuneMessages';
 import { getRandomTarotCard } from '../data/tarotCards';
 import TAROT_CARDS from '../data/tarotCards';
-import { updateCheckin } from '../services/firestoreService';
-import { addToCollection } from '../services/firestoreService';
+import { openFortuneForToday } from '../services/firestoreService';
 
 export default function FortuneCookie({ userId, userProfile, checkinData, onFortuneOpened, couponProbability }) {
   const [phase, setPhase] = useState(
@@ -20,7 +19,34 @@ export default function FortuneCookie({ userId, userProfile, checkinData, onFort
       : null
   );
 
+  const couponExpireAt = useMemo(() => {
+    if (phase !== 'result' || !fortuneResult?.coupon) return null;
+    return Date.now() + 10 * 60 * 1000;
+  }, [phase, fortuneResult]);
+
+  const [couponTimeLeft, setCouponTimeLeft] = useState(null);
+
+  useEffect(() => {
+    if (!couponExpireAt || !fortuneResult?.coupon) {
+      setCouponTimeLeft(null);
+      return undefined;
+    }
+
+    const tick = () => {
+      const left = Math.max(0, couponExpireAt - Date.now());
+      setCouponTimeLeft(left);
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [couponExpireAt, fortuneResult]);
+
   const openCookie = async () => {
+    if (phase !== 'closed' || checkinData?.fortune_opened) {
+      return;
+    }
+
     setPhase('cracking');
 
     // Generate fortune
@@ -39,17 +65,24 @@ export default function FortuneCookie({ userId, userProfile, checkinData, onFort
     const result = { message, coupon, cardId: card.id };
     setFortuneResult(result);
 
-    // Save to Firestore
+    // Save to Firestore atomically (one open per cycle)
     try {
-      await updateCheckin(userId, {
-        fortune_opened: true,
-        fortune_message: message,
-        coupon_won: coupon,
-        collected_item: card.id
-      });
-      await addToCollection(userId, card.id);
+      const saveResult = await openFortuneForToday(userId, result);
+      if (!saveResult.opened) {
+        if (saveResult.existing) {
+          setFortuneResult(saveResult.existing);
+          setPhase('result');
+          if (onFortuneOpened) onFortuneOpened(saveResult.existing);
+          return;
+        }
+
+        setPhase('closed');
+        return;
+      }
     } catch (err) {
       console.error('Failed to save fortune result:', err);
+      setPhase('closed');
+      return;
     }
 
     // Show cracking animation then reveal
@@ -57,6 +90,13 @@ export default function FortuneCookie({ userId, userProfile, checkinData, onFort
       setPhase('result');
       if (onFortuneOpened) onFortuneOpened(result);
     }, 1500);
+  };
+
+  const formatTimer = (ms) => {
+    const totalSeconds = Math.ceil(ms / 1000);
+    const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const seconds = String(totalSeconds % 60).padStart(2, '0');
+    return `${minutes}:${seconds}`;
   };
 
   const couponLabel = (coupon) => {
@@ -205,6 +245,11 @@ export default function FortuneCookie({ userId, userProfile, checkinData, onFort
                 <p className="text-dim text-xs mt-8">
                   바텐더에게 이 화면을 보여주세요
                 </p>
+                {fortuneResult.coupon === 'discount_coupon' && couponTimeLeft !== null && (
+                  <p className="text-xs mt-8" style={{ color: 'var(--color-gold-light)', fontWeight: 700 }}>
+                    쿠폰 유효시간 {formatTimer(couponTimeLeft)}
+                  </p>
+                )}
               </motion.div>
             )}
 
