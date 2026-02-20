@@ -23,7 +23,9 @@ export default function LocationGate({ onLocationVerified, config, bypassLocatio
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    if (bypassLocationCheck) {
+    const locationCheckEnabled = config?.location_check_enabled !== false;
+
+    if (bypassLocationCheck || !locationCheckEnabled) {
       setStatus('verified');
       onLocationVerified();
       return;
@@ -34,7 +36,9 @@ export default function LocationGate({ onLocationVerified, config, bypassLocatio
   }, [bypassLocationCheck]);
 
   const checkLocation = () => {
-    if (bypassLocationCheck) {
+    const locationCheckEnabled = config?.location_check_enabled !== false;
+
+    if (bypassLocationCheck || !locationCheckEnabled) {
       setStatus('verified');
       onLocationVerified();
       return;

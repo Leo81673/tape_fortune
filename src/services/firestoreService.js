@@ -133,6 +133,16 @@ export async function getTodayCheckedInUsers() {
   return users;
 }
 
+export async function getAllUsers() {
+  const usersRef = collection(db, 'users');
+  const snapshot = await getDocs(query(usersRef));
+  const users = [];
+  snapshot.forEach((docSnapshot) => {
+    users.push({ id: docSnapshot.id, ...docSnapshot.data() });
+  });
+  return users;
+}
+
 // ==================== Admin Operations ====================
 
 export async function getAdminConfig() {
@@ -148,6 +158,7 @@ export async function getAdminConfig() {
     location_lat: 37.5340,
     location_lng: 126.9948,
     location_radius: 100,
+    location_check_enabled: true,
     last_code_update: serverTimestamp()
   };
   await setDoc(doc(db, 'admin', 'config'), defaultConfig);
