@@ -18,16 +18,28 @@ function getDistance(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-export default function LocationGate({ onLocationVerified, config }) {
+export default function LocationGate({ onLocationVerified, config, bypassLocationCheck = false }) {
   const [status, setStatus] = useState('checking'); // checking, verified, denied, error
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
+    if (bypassLocationCheck) {
+      setStatus('verified');
+      onLocationVerified();
+      return;
+    }
+
     checkLocation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bypassLocationCheck]);
 
   const checkLocation = () => {
+    if (bypassLocationCheck) {
+      setStatus('verified');
+      onLocationVerified();
+      return;
+    }
+
     setStatus('checking');
 
     if (!navigator.geolocation) {
