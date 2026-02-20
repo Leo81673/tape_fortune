@@ -64,6 +64,25 @@ function App() {
     setUserProfile(prev => ({ ...prev, ...profileData }));
   };
 
+  const handleFortuneOpened = (result) => {
+    setCheckinData(prev => ({
+      ...(prev || {}),
+      fortune_opened: true,
+      fortune_message: result.message,
+      coupon_won: result.coupon,
+      collected_item: result.cardId
+    }));
+
+    setUserProfile(prev => {
+      if (!prev) return prev;
+      const currentCollection = prev.collection || [];
+      if (currentCollection.includes(result.cardId)) {
+        return prev;
+      }
+      return { ...prev, collection: [...currentCollection, result.cardId] };
+    });
+  };
+
   const handleLogoTap = () => {
     const newCount = logoTapCount + 1;
     setLogoTapCount(newCount);
@@ -181,6 +200,7 @@ function App() {
         userProfile={userProfile}
         checkinData={checkinData}
         onProfileUpdated={handleProfileUpdated}
+        onFortuneOpened={handleFortuneOpened}
         couponProbability={adminConfig?.coupon_probability}
         onLogoTap={handleLogoTap}
       />

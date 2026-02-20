@@ -1,6 +1,6 @@
 import {
   doc, getDoc, setDoc, updateDoc, collection, getDocs,
-  serverTimestamp, query, deleteDoc
+  serverTimestamp, query, deleteDoc, runTransaction, arrayUnion
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { getCycleDateKey, generateStaffCode } from '../utils/dateUtils';
@@ -47,7 +47,14 @@ export async function addToCollection(instagramId, cardId) {
 
 export async function checkIn(instagramId) {
   const dateKey = getCycleDateKey();
-  await setDoc(doc(db, 'daily_checkins', dateKey, 'users', instagramId), {
+  const checkinRef = doc(db, 'daily_checkins', dateKey, 'users', instagramId);
+  const existingCheckin = await getDoc(checkinRef);
+
+  if (existingCheckin.exists()) {
+    return existingCheckin.data();
+  }
+
+  await setDoc(checkinRef, {
     checked_in_at: serverTimestamp(),
     fortune_opened: false,
     fortune_message: null,
@@ -74,6 +81,45 @@ export async function updateCheckin(instagramId, data) {
     doc(db, 'daily_checkins', dateKey, 'users', instagramId),
     data
   );
+}
+
+export async function openFortuneForToday(instagramId, fortuneData) {
+  const dateKey = getCycleDateKey();
+  const checkinRef = doc(db, 'daily_checkins', dateKey, 'users', instagramId);
+  const userRef = doc(db, 'users', instagramId);
+
+  return runTransaction(db, async (transaction) => {
+    const checkinSnap = await transaction.get(checkinRef);
+    if (!checkinSnap.exists()) {
+      return { opened: false, reason: 'not_checked_in' };
+    }
+
+    const currentCheckin = checkinSnap.data();
+    if (currentCheckin.fortune_opened) {
+      return {
+        opened: false,
+        reason: 'already_opened',
+        existing: {
+          message: currentCheckin.fortune_message,
+          coupon: currentCheckin.coupon_won,
+          cardId: currentCheckin.collected_item
+        }
+      };
+    }
+
+    transaction.update(checkinRef, {
+      fortune_opened: true,
+      fortune_message: fortuneData.message,
+      coupon_won: fortuneData.coupon,
+      collected_item: fortuneData.cardId
+    });
+
+    transaction.update(userRef, {
+      collection: arrayUnion(fortuneData.cardId)
+    });
+
+    return { opened: true };
+  });
 }
 
 export async function getTodayCheckedInUsers() {

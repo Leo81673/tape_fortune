@@ -12,12 +12,13 @@ const TABS = [
   { id: 'profile', label: '프로필', icon: '📝' }
 ];
 
-export default function Home({ userId, userProfile, checkinData, onProfileUpdated, couponProbability, onLogoTap }) {
+export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, couponProbability, onLogoTap }) {
   const [activeTab, setActiveTab] = useState('fortune');
   const [fortuneOpened, setFortuneOpened] = useState(checkinData?.fortune_opened || false);
 
   const handleFortuneOpened = (result) => {
     setFortuneOpened(true);
+    if (onFortuneOpened) onFortuneOpened(result);
   };
 
   return (

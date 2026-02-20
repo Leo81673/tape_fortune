@@ -1,6 +1,8 @@
+import KoreanLunarCalendar from 'korean-lunar-calendar';
+
 /**
  * 일주(日柱) calculation - Heavenly Stem + Earthly Branch for a given date.
- * Based on the traditional Korean/Chinese 60-day Sexagenary cycle (육십갑자).
+ * Uses korean-lunar-calendar's validated 만세력/gapja calculation.
  */
 
 // 천간 (Heavenly Stems)
@@ -13,53 +15,51 @@ export const JIJI_HANJA = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未
 
 // 오행 (Five Elements) mapping for 천간
 export const CHEONGAN_OHAENG = {
-  '갑': '목', '을': '목',
-  '병': '화', '정': '화',
-  '무': '토', '기': '토',
-  '경': '금', '신': '금',
-  '임': '수', '계': '수'
+  갑: '목', 을: '목',
+  병: '화', 정: '화',
+  무: '토', 기: '토',
+  경: '금', 신: '금',
+  임: '수', 계: '수'
 };
 
 // 오행 mapping for 지지
 export const JIJI_OHAENG = {
-  '자': '수', '축': '토',
-  '인': '목', '묘': '목',
-  '진': '토', '사': '화',
-  '오': '화', '미': '토',
-  '신': '금', '유': '금',
-  '술': '토', '해': '수'
+  자: '수', 축: '토',
+  인: '목', 묘: '목',
+  진: '토', 사: '화',
+  오: '화', 미: '토',
+  신: '금', 유: '금',
+  술: '토', 해: '수'
 };
 
-/**
- * Calculate the 일주 (Day Pillar) from a solar date.
- * Reference date: January 1, 1900 was 갑자(甲子) day — index 0 in the 60-day cycle.
- * Actually, Jan 1 1900 = 경자(庚子). Let's use the known reference:
- * January 6, 1900 = 을사(乙巳) — well-documented reference point.
- *
- * More reliable: Jan 1, 2000 = 갑자(甲子) day? No.
- * Using well-known reference: 1900-01-01 = 庚子 (경자) day.
- * 庚 is index 6 in 천간, 子 is index 0 in 지지. sexagenary index = 36.
- */
-const REFERENCE_DATE = new Date(Date.UTC(1900, 0, 1)); // 1900-01-01
-const REFERENCE_CHEONGAN_INDEX = 6; // 경(庚)
-const REFERENCE_JIJI_INDEX = 0;     // 자(子)
-
 export function calculateIlju(year, month, day) {
-  const targetDate = new Date(Date.UTC(year, month - 1, day));
-  const diffTime = targetDate.getTime() - REFERENCE_DATE.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const calendar = new KoreanLunarCalendar();
+  const valid = calendar.setSolarDate(year, month, day);
 
-  const cheonganIndex = ((REFERENCE_CHEONGAN_INDEX + diffDays) % 10 + 10) % 10;
-  const jijiIndex = ((REFERENCE_JIJI_INDEX + diffDays) % 12 + 12) % 12;
+  if (!valid) {
+    throw new Error('Invalid solar date for ilju calculation');
+  }
+
+  const gapja = calendar.getKoreanGapja();
+  const dayText = gapja.day.replace('일', ''); // e.g. "경진일" -> "경진"
+  const cheongan = dayText[0];
+  const jiji = dayText[1];
+
+  const cheonganIndex = CHEONGAN.indexOf(cheongan);
+  const jijiIndex = JIJI.indexOf(jiji);
+
+  if (cheonganIndex === -1 || jijiIndex === -1) {
+    throw new Error(`Failed to parse ilju from gapja day: ${gapja.day}`);
+  }
 
   return {
-    cheongan: CHEONGAN[cheonganIndex],
-    jiji: JIJI[jijiIndex],
+    cheongan,
+    jiji,
     cheonganHanja: CHEONGAN_HANJA[cheonganIndex],
     jijiHanja: JIJI_HANJA[jijiIndex],
     ohaeng: {
-      cheongan: CHEONGAN_OHAENG[CHEONGAN[cheonganIndex]],
-      jiji: JIJI_OHAENG[JIJI[jijiIndex]]
+      cheongan: CHEONGAN_OHAENG[cheongan],
+      jiji: JIJI_OHAENG[jiji]
     }
   };
 }
@@ -104,12 +104,12 @@ export function calculateIljuCompatibility(ilju1, ilju2) {
   ];
 
   const scoreMap = {
-    'same': 70,
-    'generate': 100,
-    'generated': 90,
-    'overcome': 30,
-    'overcame': 40,
-    'neutral': 60
+    same: 70,
+    generate: 100,
+    generated: 90,
+    overcome: 30,
+    overcame: 40,
+    neutral: 60
   };
 
   const totalScore = relations.reduce((sum, rel) => sum + scoreMap[rel], 0);
