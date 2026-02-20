@@ -35,6 +35,7 @@ function App() {
         location_lat: 37.5340,
         location_lng: 126.9948,
         location_radius: 100,
+        location_check_enabled: true,
         admin_password: '0000'
       });
       setAppState('location');

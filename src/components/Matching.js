@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { getTodayCheckedInUsers, updateCheckin, getUser } from '../services/firestoreService';
+import { getAllUsers, updateCheckin } from '../services/firestoreService';
 import { getMbtiCompatibility } from '../utils/mbtiCompatibility';
 import { calculateIljuCompatibility } from '../utils/ilju';
 
@@ -16,6 +16,7 @@ export default function Matching({ userId, userProfile }) {
 
   const findMatch = async () => {
     setLoading(true);
+    setNoMatch(false);
     try {
       if (!userProfile?.mbti || !userProfile?.ilju) {
         setNoMatch(true);
@@ -23,8 +24,8 @@ export default function Matching({ userId, userProfile }) {
         return;
       }
 
-      const todayUsers = await getTodayCheckedInUsers();
-      const otherUsers = todayUsers.filter(u => u.id !== userId);
+      const allUsers = await getAllUsers();
+      const otherUsers = allUsers.filter(u => u.id !== userId);
 
       if (otherUsers.length === 0) {
         setNoMatch(true);
@@ -32,12 +33,10 @@ export default function Matching({ userId, userProfile }) {
         return;
       }
 
-      // Calculate compatibility with each user
       let bestMatch = null;
       let bestScore = -1;
 
-      for (const otherCheckin of otherUsers) {
-        const otherProfile = await getUser(otherCheckin.id);
+      for (const otherProfile of otherUsers) {
         if (!otherProfile?.mbti || !otherProfile?.ilju) continue;
 
         const mbtiScore = getMbtiCompatibility(userProfile.mbti, otherProfile.mbti);
@@ -47,7 +46,7 @@ export default function Matching({ userId, userProfile }) {
         if (totalScore > bestScore) {
           bestScore = totalScore;
           bestMatch = {
-            instagramId: otherCheckin.id,
+            instagramId: otherProfile.id,
             mbti: otherProfile.mbti,
             score: totalScore,
             mbtiScore,
@@ -58,7 +57,6 @@ export default function Matching({ userId, userProfile }) {
 
       if (bestMatch) {
         setMatch(bestMatch);
-        // Save match result
         await updateCheckin(userId, { matched_with: bestMatch.instagramId });
       } else {
         setNoMatch(true);
@@ -165,7 +163,6 @@ export default function Matching({ userId, userProfile }) {
           }}
         />
 
-        {/* Score */}
         <div style={{ marginBottom: 20 }}>
           <span
             style={{
@@ -180,7 +177,6 @@ export default function Matching({ userId, userProfile }) {
           <span className="text-dim text-sm">점</span>
         </div>
 
-        {/* Score bars */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
           <div style={{ flex: 1 }}>
             <p className="text-xs text-muted mb-8">MBTI</p>
@@ -226,7 +222,6 @@ export default function Matching({ userId, userProfile }) {
           </div>
         </div>
 
-        {/* Instagram ID */}
         <div style={{
           padding: '16px',
           background: 'rgba(212, 168, 67, 0.08)',
@@ -239,7 +234,6 @@ export default function Matching({ userId, userProfile }) {
           </p>
         </div>
 
-        {/* Comment */}
         <p className="text-dim text-sm" style={{ lineHeight: 1.6, fontStyle: 'italic' }}>
           "{getCompatibilityComment(match.score)}"
         </p>

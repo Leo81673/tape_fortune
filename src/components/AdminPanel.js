@@ -1,31 +1,85 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  getAdminConfig, getTodayCheckedInUsers, resetDaily
+  getAdminConfig,
+  getTodayCheckedInUsers,
+  resetDaily,
+  updateAdminConfig,
+  getAllUsers
 } from '../services/firestoreService';
+import { getMbtiCompatibility } from '../utils/mbtiCompatibility';
+import { calculateIljuCompatibility } from '../utils/ilju';
 
 export default function AdminPanel({ onClose }) {
   const [config, setConfig] = useState(null);
   const [users, setUsers] = useState([]);
+  const [topMatches, setTopMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
+  const [savingLocation, setSavingLocation] = useState(false);
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [adminConfig, checkedInUsers] = await Promise.all([
+      const [adminConfig, checkedInUsers, allUsers] = await Promise.all([
         getAdminConfig(),
-        getTodayCheckedInUsers()
+        getTodayCheckedInUsers(),
+        getAllUsers()
       ]);
       setConfig(adminConfig);
       setUsers(checkedInUsers);
+      setTopMatches(calculateTopMatches(allUsers));
     } catch (err) {
       console.error('Failed to load admin data:', err);
     }
     setLoading(false);
+  }, []);
+
+  const calculateTopMatches = (allUsers) => {
+    const candidates = allUsers.filter((user) => user?.mbti && user?.ilju);
+    const matches = [];
+
+    for (let i = 0; i < candidates.length; i += 1) {
+      for (let j = i + 1; j < candidates.length; j += 1) {
+        const userA = candidates[i];
+        const userB = candidates[j];
+        const mbtiScore = getMbtiCompatibility(userA.mbti, userB.mbti);
+        const iljuScore = calculateIljuCompatibility(userA.ilju, userB.ilju);
+        const totalScore = Math.round(mbtiScore * 0.5 + iljuScore * 0.5);
+
+        matches.push({
+          key: `${userA.id}-${userB.id}`,
+          userA: userA.id,
+          userB: userB.id,
+          totalScore,
+          mbtiScore,
+          iljuScore
+        });
+      }
+    }
+
+    return matches.sort((a, b) => b.totalScore - a.totalScore).slice(0, 10);
+  };
+
+  const handleLocationCheckToggle = async () => {
+    if (!config || savingLocation) return;
+
+    const nextValue = config.location_check_enabled === false;
+    setSavingLocation(true);
+
+    try {
+      await updateAdminConfig({ location_check_enabled: nextValue });
+      setConfig((prev) => ({ ...prev, location_check_enabled: nextValue }));
+    } catch (err) {
+      console.error('Failed to update location check config:', err);
+      alert('위치기반 확인 설정 저장에 실패했습니다.');
+    }
+
+    setSavingLocation(false);
   };
 
   const handleReset = async () => {
@@ -67,7 +121,28 @@ export default function AdminPanel({ onClose }) {
         </button>
       </div>
 
-      {/* Staff Code */}
+      <div className="card mb-16">
+        <p className="text-xs text-muted mb-8">위치 기반 확인</p>
+        <button
+          className="btn-secondary"
+          onClick={handleLocationCheckToggle}
+          disabled={savingLocation}
+          style={{
+            borderColor: config?.location_check_enabled === false ? 'var(--color-border)' : 'var(--color-gold)',
+            color: config?.location_check_enabled === false ? 'var(--color-text-dim)' : 'var(--color-gold)'
+          }}
+        >
+          {savingLocation
+            ? '저장 중...'
+            : config?.location_check_enabled === false
+              ? '위치확인 꺼짐 (클릭하여 켜기)'
+              : '위치확인 켜짐 (클릭하여 끄기)'}
+        </button>
+        <p className="text-xs text-muted text-center mt-8">
+          꺼두면 관리자 테스트 모드가 아니어도 위치 확인 없이 입장 가능합니다
+        </p>
+      </div>
+
       <div className="card mb-16">
         <p className="text-xs text-muted mb-8">오늘의 스태프 코드</p>
         <p style={{
@@ -84,7 +159,6 @@ export default function AdminPanel({ onClose }) {
         </p>
       </div>
 
-      {/* Today's Check-ins */}
       <div className="card mb-16">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <p className="text-xs text-muted">오늘 체크인 ({users.length}명)</p>
@@ -141,7 +215,33 @@ export default function AdminPanel({ onClose }) {
         )}
       </div>
 
-      {/* Coupon Winners */}
+      <div className="card mb-16">
+        <p className="text-xs text-muted mb-12">전체 DB 기준 상위 궁합 TOP 10</p>
+        {topMatches.length === 0 ? (
+          <p className="text-dim text-sm text-center" style={{ padding: '8px 0' }}>
+            MBTI/일주 정보가 있는 유저가 부족합니다
+          </p>
+        ) : (
+          topMatches.map((match, idx) => (
+            <div
+              key={match.key}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '8px 0',
+                borderBottom: idx < topMatches.length - 1 ? '1px solid var(--color-border)' : 'none'
+              }}
+            >
+              <span style={{ fontSize: 14 }}>@{match.userA} ↔ @{match.userB}</span>
+              <span className="text-sm" style={{ color: 'var(--color-gold)' }}>
+                {match.totalScore}점
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+
       <div className="card mb-16">
         <p className="text-xs text-muted mb-12">쿠폰 당첨 내역</p>
         {(() => {
@@ -172,7 +272,6 @@ export default function AdminPanel({ onClose }) {
         })()}
       </div>
 
-      {/* Manual Reset */}
       <button
         className="btn-secondary"
         onClick={handleReset}
