@@ -16,6 +16,7 @@ function App() {
   const [logoTapTimer, setLogoTapTimer] = useState(null);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [showAdminPrompt, setShowAdminPrompt] = useState(false);
+  const [isAdminTestMode, setIsAdminTestMode] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -83,6 +84,7 @@ function App() {
     if (adminPasswordInput === (adminConfig?.admin_password || '0000')) {
       setShowAdminPrompt(false);
       setAdminPasswordInput('');
+      setIsAdminTestMode(true);
       setAppState('admin');
     } else {
       alert('비밀번호가 올바르지 않습니다.');
@@ -152,6 +154,7 @@ function App() {
         <LocationGate
           onLocationVerified={handleLocationVerified}
           config={adminConfig}
+          bypassLocationCheck={isAdminTestMode}
         />
       </>
     );
