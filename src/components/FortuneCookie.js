@@ -27,9 +27,10 @@ export default function FortuneCookie({
   const [collectionCoupon, setCollectionCoupon] = useState(null);
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
+  const persistedOpened = Boolean(checkinData?.fortune_opened && !isTester);
 
   useEffect(() => {
-    if (checkinData?.fortune_opened && !isTester) {
+    if (persistedOpened) {
       setPhase('result');
       setFortuneResult({
         message: checkinData.fortune_message,
@@ -40,10 +41,21 @@ export default function FortuneCookie({
       return;
     }
 
-    setPhase('closed');
-    setFortuneResult(null);
-    setCollectionCoupon(null);
-  }, [checkinData, isTester]);
+    // Reset only when persisted state explicitly transitions back to unopened
+    // (e.g., tester reset). Avoid resetting on unrelated parent re-renders.
+    if (phase === 'result') {
+      setPhase('closed');
+      setFortuneResult(null);
+      setCollectionCoupon(null);
+    }
+  }, [
+    persistedOpened,
+    checkinData?.fortune_message,
+    checkinData?.coupon_won,
+    checkinData?.collected_item,
+    checkinData?.horoscope,
+    phase
+  ]);
 
   // Load active coupons on mount (persisted across refresh)
   useEffect(() => {
