@@ -38,6 +38,39 @@ const COMPATIBILITY = {
 };
 
 /**
+ * MBTI relationship type descriptions.
+ * Based on Socionics and MBTI interaction theory:
+ * - Ideal/Dual: Complementary cognitive functions that complete each other
+ * - Mirror: Similar worldview but different execution style
+ * - Activity: Energizing and stimulating interaction
+ * - Kindred: Same dominant function, easy understanding
+ * - Semi-dual: Partial completion, comfortable but not fully satisfying
+ * - Contrary: Different approaches to similar goals
+ */
+const MBTI_RELATIONSHIPS = {
+  100: {
+    label: '천생연분',
+    description: '서로의 약점을 완벽히 보완하는 이상적인 조합이에요. 인지 기능이 상호보완적이라 대화가 자연스럽고, 함께 있으면 에너지가 충전되는 관계입니다.'
+  },
+  85: {
+    label: '최고의 궁합',
+    description: '핵심 가치관이 비슷하면서도 서로 다른 시각을 제공하는 조합이에요. 깊은 이해와 자극을 동시에 주고받을 수 있는 관계입니다.'
+  },
+  70: {
+    label: '좋은 궁합',
+    description: '비슷한 사고방식을 공유하면서도 적절한 차이가 있어 편안한 관계를 만들어요. 서로를 쉽게 이해하고 소통이 원활한 조합입니다.'
+  },
+  55: {
+    label: '보통',
+    description: '서로 다른 강점을 가진 조합이에요. 처음에는 낯설 수 있지만, 서로의 차이를 인정하면 새로운 시각을 배울 수 있는 관계입니다.'
+  },
+  40: {
+    label: '도전적',
+    description: '근본적으로 다른 방식으로 세상을 바라보는 조합이에요. 노력이 필요하지만, 서로에게서 가장 많이 성장할 수 있는 관계이기도 합니다.'
+  }
+};
+
+/**
  * Get MBTI compatibility score between two types.
  * Returns a score from 0 to 100.
  */
@@ -55,6 +88,28 @@ export function getMbtiCompatibility(type1, type2) {
   }
 
   return 55; // default neutral
+}
+
+/**
+ * Get MBTI evaluation label for a given score.
+ */
+export function getMbtiEvalLabel(score) {
+  if (score >= 100) return MBTI_RELATIONSHIPS[100].label;
+  if (score >= 85) return MBTI_RELATIONSHIPS[85].label;
+  if (score >= 70) return MBTI_RELATIONSHIPS[70].label;
+  if (score >= 55) return MBTI_RELATIONSHIPS[55].label;
+  return MBTI_RELATIONSHIPS[40].label;
+}
+
+/**
+ * Get MBTI relationship description for a given score.
+ */
+export function getMbtiRelationship(score) {
+  if (score >= 100) return MBTI_RELATIONSHIPS[100].description;
+  if (score >= 85) return MBTI_RELATIONSHIPS[85].description;
+  if (score >= 70) return MBTI_RELATIONSHIPS[70].description;
+  if (score >= 55) return MBTI_RELATIONSHIPS[55].description;
+  return MBTI_RELATIONSHIPS[40].description;
 }
 
 export { MBTI_TYPES };

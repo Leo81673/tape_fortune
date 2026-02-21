@@ -2,9 +2,9 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import TAROT_CARDS from '../data/tarotCards';
 
-export default function Collection({ userCollection = [] }) {
-  const isComplete = userCollection.length === 22 &&
-    TAROT_CARDS.every(card => userCollection.includes(card.id));
+export default function Collection({ userCollection = [], collectionCounts = {} }) {
+  const uniqueOwned = TAROT_CARDS.filter(c => userCollection.includes(c.id)).length;
+  const isComplete = uniqueOwned === 22;
 
   return (
     <div style={{ padding: '20px 0' }}>
@@ -13,7 +13,7 @@ export default function Collection({ userCollection = [] }) {
           타로카드 도감
         </h3>
         <span className="text-dim text-sm">
-          {TAROT_CARDS.filter(c => userCollection.includes(c.id)).length} / 22
+          {uniqueOwned} / 22
         </span>
       </div>
 
@@ -48,6 +48,7 @@ export default function Collection({ userCollection = [] }) {
       >
         {TAROT_CARDS.map((card) => {
           const owned = userCollection.includes(card.id);
+          const count = collectionCounts[card.id] || 0;
           return (
             <motion.div
               key={card.id}
@@ -62,13 +63,30 @@ export default function Collection({ userCollection = [] }) {
                 textAlign: 'center',
                 position: 'relative',
                 opacity: owned ? 1 : 0.4,
-                minHeight: 90,
+                minHeight: 100,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center'
               }}
             >
+              {/* Count badge */}
+              {owned && count > 0 && (
+                <div style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 4,
+                  background: count >= 10 ? 'var(--color-gold)' : 'rgba(212, 168, 67, 0.3)',
+                  color: count >= 10 ? '#0a0a0f' : 'var(--color-gold)',
+                  borderRadius: 10,
+                  padding: '1px 5px',
+                  fontSize: 8,
+                  fontWeight: 700,
+                  lineHeight: 1.4
+                }}>
+                  {count}/10
+                </div>
+              )}
               <div style={{ fontSize: owned ? 28 : 20, marginBottom: 4 }}>
                 {owned ? card.emoji : '🔒'}
               </div>

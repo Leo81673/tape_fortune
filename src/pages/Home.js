@@ -12,9 +12,12 @@ const TABS = [
   { id: 'profile', label: '프로필', icon: '📝' }
 ];
 
-export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, couponProbability, onLogoTap }) {
+export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, adminConfig, onLogoTap }) {
   const [activeTab, setActiveTab] = useState('fortune');
-  const [fortuneOpened, setFortuneOpened] = useState(checkinData?.fortune_opened || false);
+  const isTester = userId?.toLowerCase().startsWith('tester');
+  const [fortuneOpened, setFortuneOpened] = useState(
+    (checkinData?.fortune_opened && !isTester) || false
+  );
 
   const handleFortuneOpened = (result) => {
     setFortuneOpened(true);
@@ -54,7 +57,7 @@ export default function Home({ userId, userProfile, checkinData, onProfileUpdate
                 userProfile={userProfile}
                 checkinData={checkinData}
                 onFortuneOpened={handleFortuneOpened}
-                couponProbability={couponProbability}
+                adminConfig={adminConfig}
               />
 
               {fortuneOpened && !userProfile?.mbti && (
@@ -94,7 +97,10 @@ export default function Home({ userId, userProfile, checkinData, onProfileUpdate
               exit={{ opacity: 0, x: 20 }}
               transition={{ duration: 0.2 }}
             >
-              <Collection userCollection={userProfile?.collection || []} />
+              <Collection
+                userCollection={userProfile?.collection || []}
+                collectionCounts={userProfile?.collection_counts || {}}
+              />
             </motion.div>
           )}
 
