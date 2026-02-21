@@ -88,7 +88,12 @@ function App() {
     }));
 
     setUserProfile(prev => {
-      if (!prev) return prev;
+      if (!prev) {
+        return {
+          collection: [result.cardId],
+          collection_counts: { [result.cardId]: 1 }
+        };
+      }
       const currentCollection = prev.collection || [];
       const currentCounts = prev.collection_counts || {};
       const cardId = result.cardId;

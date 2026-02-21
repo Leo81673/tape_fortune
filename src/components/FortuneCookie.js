@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFortuneMessage } from '../data/fortuneMessages';
 import TAROT_CARDS from '../data/tarotCards';
@@ -28,6 +28,7 @@ export default function FortuneCookie({
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
   const persistedOpened = Boolean(checkinData?.fortune_opened && !isTester);
+  const prevPersistedOpenedRef = useRef(persistedOpened);
 
   useEffect(() => {
     if (persistedOpened) {
@@ -42,19 +43,20 @@ export default function FortuneCookie({
     }
 
     // Reset only when persisted state explicitly transitions back to unopened
-    // (e.g., tester reset). Avoid resetting on unrelated parent re-renders.
-    if (phase === 'result') {
+    // (e.g., tester reset). Avoid resetting during normal in-memory transitions.
+    if (prevPersistedOpenedRef.current && !persistedOpened) {
       setPhase('closed');
       setFortuneResult(null);
       setCollectionCoupon(null);
     }
+
+    prevPersistedOpenedRef.current = persistedOpened;
   }, [
     persistedOpened,
     checkinData?.fortune_message,
     checkinData?.coupon_won,
     checkinData?.collected_item,
-    checkinData?.horoscope,
-    phase
+    checkinData?.horoscope
   ]);
 
   // Load active coupons on mount (persisted across refresh)
@@ -168,9 +170,10 @@ export default function FortuneCookie({
     const result = { message, coupon: couponData, cardId: card.id, horoscope };
     setFortuneResult(result);
 
-    // Save to Firestore
+    // Save core fortune result to Firestore
+    let saveResult;
     try {
-      const saveResult = await openFortuneForToday(userId, result);
+      saveResult = await openFortuneForToday(userId, result);
       if (!saveResult.opened) {
         clearInterval(rouletteTimer);
         if (saveResult.existing) {
@@ -182,9 +185,16 @@ export default function FortuneCookie({
         setPhase('closed');
         return;
       }
+    } catch (err) {
+      clearInterval(rouletteTimer);
+      console.error('Failed to save fortune result:', err);
+      setPhase('closed');
+      return;
+    }
 
-      // Handle first-time card → collection coupon
-      if (saveResult.isFirstTimeCard) {
+    // Optional coupon saves should not cancel the already-opened fortune flow.
+    if (saveResult.isFirstTimeCard) {
+      try {
         const cardSetting = cardSettings[card.id];
         const collCouponText = cardSetting?.coupon_text || `${card.nameKr} 카드 첫 획득 보너스!`;
         const collCouponData = {
@@ -198,10 +208,13 @@ export default function FortuneCookie({
         };
         setCollectionCoupon(collCouponData);
         await saveCoupon(userId, collCouponData);
+      } catch (err) {
+        console.error('Failed to save collection coupon:', err);
       }
+    }
 
-      // Save fortune coupon if won
-      if (couponData) {
+    if (couponData) {
+      try {
         const fortuneCouponRecord = {
           type: 'fortune',
           coupon_id: couponData.id,
@@ -213,12 +226,9 @@ export default function FortuneCookie({
         };
         await saveCoupon(userId, fortuneCouponRecord);
         await loadActiveCoupons();
+      } catch (err) {
+        console.error('Failed to save fortune coupon:', err);
       }
-    } catch (err) {
-      clearInterval(rouletteTimer);
-      console.error('Failed to save fortune result:', err);
-      setPhase('closed');
-      return;
     }
 
     // Show cracking animation then reveal
