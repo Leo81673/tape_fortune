@@ -32,6 +32,15 @@ export const JIJI_OHAENG = {
   술: '토', 해: '수'
 };
 
+// 오행 한자 이름
+const OHAENG_NAMES = {
+  목: '목(木)',
+  화: '화(火)',
+  토: '토(土)',
+  금: '금(金)',
+  수: '수(水)'
+};
+
 export function calculateIlju(year, month, day) {
   const calendar = new KoreanLunarCalendar();
   const valid = calendar.setSolarDate(year, month, day);
@@ -89,6 +98,62 @@ function getOhaengRelation(element1, element2) {
   if ((oi2 + 1) % 5 === oi1) return 'overcame';       // element1 is overcome by element2
 
   return 'neutral';
+}
+
+/**
+ * Saju relationship evaluation.
+ * Based on traditional 오행 상생상극 (Five Elements generating/overcoming) theory:
+ * - 상생(相生): Elements that support and nurture each other
+ * - 상극(相剋): Elements that control and challenge each other
+ * - 비화(比和): Same elements that resonate together
+ */
+const SAJU_RELATIONSHIPS = {
+  excellent: {
+    label: '천생연분',
+    description: '오행이 서로를 생(生)하는 상생 관계예요. 한쪽이 다른 쪽에게 자연스럽게 힘을 주고, 함께하면 서로의 기운이 더 좋아지는 조합입니다.'
+  },
+  great: {
+    label: '아주 좋음',
+    description: '오행의 흐름이 대체로 조화로운 관계예요. 서로의 기운이 잘 어울려 편안하고 자연스러운 만남이 될 수 있습니다.'
+  },
+  good: {
+    label: '좋음',
+    description: '비화(比和) — 같은 오행끼리의 공명이 있어요. 서로 비슷한 에너지를 가져 이해가 빠르고 공감대가 쉽게 형성됩니다.'
+  },
+  average: {
+    label: '보통',
+    description: '오행의 균형이 중립적인 관계예요. 특별한 충돌은 없지만, 서로에 대한 이해를 쌓아가면 더 좋아질 수 있는 관계입니다.'
+  },
+  challenging: {
+    label: '도전적',
+    description: '오행이 서로를 극(剋)하는 상극 관계가 포함되어 있어요. 강한 끌림이 있을 수 있지만, 서로의 차이를 존중하는 노력이 필요한 조합입니다.'
+  }
+};
+
+export function getSajuEvalLabel(score) {
+  if (score >= 90) return SAJU_RELATIONSHIPS.excellent.label;
+  if (score >= 75) return SAJU_RELATIONSHIPS.great.label;
+  if (score >= 65) return SAJU_RELATIONSHIPS.good.label;
+  if (score >= 50) return SAJU_RELATIONSHIPS.average.label;
+  return SAJU_RELATIONSHIPS.challenging.label;
+}
+
+export function getSajuRelationship(score) {
+  if (score >= 90) return SAJU_RELATIONSHIPS.excellent.description;
+  if (score >= 75) return SAJU_RELATIONSHIPS.great.description;
+  if (score >= 65) return SAJU_RELATIONSHIPS.good.description;
+  if (score >= 50) return SAJU_RELATIONSHIPS.average.description;
+  return SAJU_RELATIONSHIPS.challenging.description;
+}
+
+export function formatIljuDisplay(ilju) {
+  if (!ilju) return '';
+  return `${ilju.cheongan}${ilju.jiji}(${ilju.cheonganHanja}${ilju.jijiHanja})`;
+}
+
+export function formatOhaengDisplay(ilju) {
+  if (!ilju) return '';
+  return `${OHAENG_NAMES[ilju.ohaeng.cheongan]}/${OHAENG_NAMES[ilju.ohaeng.jiji]}`;
 }
 
 /**

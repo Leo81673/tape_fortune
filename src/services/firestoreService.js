@@ -23,6 +23,8 @@ export async function createUser(instagramId, password) {
     calendar_type: null,
     ilju: null,
     collection: [],
+    collection_counts: {},
+    coupons: [],
     created_at: serverTimestamp()
   });
 }
@@ -95,31 +97,83 @@ export async function openFortuneForToday(instagramId, fortuneData) {
     }
 
     const currentCheckin = checkinSnap.data();
-    if (currentCheckin.fortune_opened) {
+
+    // Allow tester accounts to open unlimited fortune cookies
+    const isTester = instagramId.toLowerCase().startsWith('tester');
+    if (currentCheckin.fortune_opened && !isTester) {
       return {
         opened: false,
         reason: 'already_opened',
         existing: {
           message: currentCheckin.fortune_message,
           coupon: currentCheckin.coupon_won,
-          cardId: currentCheckin.collected_item
+          cardId: currentCheckin.collected_item,
+          horoscope: currentCheckin.horoscope || null
         }
       };
     }
 
-    transaction.update(checkinRef, {
+    const updateData = {
       fortune_opened: true,
       fortune_message: fortuneData.message,
       coupon_won: fortuneData.coupon,
-      collected_item: fortuneData.cardId
-    });
+      collected_item: fortuneData.cardId,
+    };
+
+    if (fortuneData.horoscope) {
+      updateData.horoscope = fortuneData.horoscope;
+    }
+
+    transaction.update(checkinRef, updateData);
+
+    // Update collection: add card and increment count
+    const userSnap = await transaction.get(userRef);
+    const userData = userSnap.data() || {};
+    const collectionCounts = userData.collection_counts || {};
+    const currentCount = collectionCounts[fortuneData.cardId] || 0;
+    const newCount = Math.min(currentCount + 1, 10);
 
     transaction.update(userRef, {
-      collection: arrayUnion(fortuneData.cardId)
+      collection: arrayUnion(fortuneData.cardId),
+      [`collection_counts.${fortuneData.cardId}`]: newCount
     });
 
-    return { opened: true };
+    // Check if this is first-time card acquisition
+    const isFirstTime = !userData.collection || !userData.collection.includes(fortuneData.cardId);
+
+    return { opened: true, isFirstTimeCard: isFirstTime };
   });
+}
+
+/**
+ * Save a coupon to user's persistent coupon list.
+ */
+export async function saveCoupon(instagramId, coupon) {
+  const userRef = doc(db, 'users', instagramId);
+  await updateDoc(userRef, {
+    coupons: arrayUnion(coupon)
+  });
+}
+
+/**
+ * Get user's active (non-expired) coupons.
+ */
+export async function getUserCoupons(instagramId) {
+  const user = await getUser(instagramId);
+  if (!user || !user.coupons) return [];
+  const now = Date.now();
+  return user.coupons.filter(c => c.expires_at > now);
+}
+
+/**
+ * Clean up expired coupons for a user.
+ */
+export async function cleanExpiredCoupons(instagramId) {
+  const user = await getUser(instagramId);
+  if (!user || !user.coupons) return;
+  const now = Date.now();
+  const activeCoupons = user.coupons.filter(c => c.expires_at > now);
+  await updateDoc(doc(db, 'users', instagramId), { coupons: activeCoupons });
 }
 
 export async function getTodayCheckedInUsers() {
@@ -145,10 +199,27 @@ export async function getAllUsers() {
 
 // ==================== Admin Operations ====================
 
+const DEFAULT_FORTUNE_COUPONS = [
+  { id: 'coupon_1', name: '샷 쿠폰', probability: 0.03, text: '무료 샷 1잔 제공!' },
+  { id: 'coupon_2', name: '할인 쿠폰', probability: 0.03, text: '음료 20% 할인!' },
+  { id: 'coupon_3', name: '디저트 쿠폰', probability: 0.01, text: '디저트 1개 무료!' }
+];
+
 export async function getAdminConfig() {
   const configDoc = await getDoc(doc(db, 'admin', 'config'));
   if (configDoc.exists()) {
-    return configDoc.data();
+    const data = configDoc.data();
+    // Ensure new fields exist with defaults
+    if (!data.fortune_coupons) {
+      data.fortune_coupons = DEFAULT_FORTUNE_COUPONS;
+    }
+    if (!data.coupon_timer_minutes) {
+      data.coupon_timer_minutes = 30;
+    }
+    if (!data.card_settings) {
+      data.card_settings = {};
+    }
+    return data;
   }
   // Initialize default config if it doesn't exist
   const defaultConfig = {
@@ -159,7 +230,10 @@ export async function getAdminConfig() {
     location_lng: 126.9948,
     location_radius: 100,
     location_check_enabled: true,
-    last_code_update: serverTimestamp()
+    last_code_update: serverTimestamp(),
+    fortune_coupons: DEFAULT_FORTUNE_COUPONS,
+    coupon_timer_minutes: 30,
+    card_settings: {}
   };
   await setDoc(doc(db, 'admin', 'config'), defaultConfig);
   return defaultConfig;

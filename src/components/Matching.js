@@ -1,22 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { getAllUsers, updateCheckin } from '../services/firestoreService';
-import { getMbtiCompatibility } from '../utils/mbtiCompatibility';
-import { calculateIljuCompatibility } from '../utils/ilju';
+import { getTodayCheckedInUsers, getUser } from '../services/firestoreService';
+import { getMbtiCompatibility, getMbtiEvalLabel, getMbtiRelationship } from '../utils/mbtiCompatibility';
+import { calculateIljuCompatibility, getSajuEvalLabel, getSajuRelationship, formatIljuDisplay, formatOhaengDisplay } from '../utils/ilju';
 
 export default function Matching({ userId, userProfile }) {
-  const [match, setMatch] = useState(null);
+  const [topMatches, setTopMatches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [noMatch, setNoMatch] = useState(false);
+  const [expandedIdx, setExpandedIdx] = useState(null);
+  const intervalRef = useRef(null);
 
-  useEffect(() => {
-    findMatch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const findMatch = async () => {
-    setLoading(true);
-    setNoMatch(false);
+  const findMatches = useCallback(async () => {
     try {
       if (!userProfile?.mbti || !userProfile?.ilju) {
         setNoMatch(true);
@@ -24,63 +19,81 @@ export default function Matching({ userId, userProfile }) {
         return;
       }
 
-      const allUsers = await getAllUsers();
-      const otherUsers = allUsers.filter(u => u.id !== userId);
+      const checkedInUsers = await getTodayCheckedInUsers();
+      const checkedInIds = new Set(checkedInUsers.map(u => u.id));
 
-      if (otherUsers.length === 0) {
+      // Get full profiles for checked-in users
+      const profilePromises = [...checkedInIds]
+        .filter(id => id !== userId)
+        .map(async (id) => {
+          const profile = await getUser(id);
+          return profile;
+        });
+
+      const profiles = (await Promise.all(profilePromises)).filter(p => p && p.mbti && p.ilju);
+
+      if (profiles.length === 0) {
         setNoMatch(true);
+        setTopMatches([]);
         setLoading(false);
         return;
       }
 
-      let bestMatch = null;
-      let bestScore = -1;
-
-      for (const otherProfile of otherUsers) {
-        if (!otherProfile?.mbti || !otherProfile?.ilju) continue;
-
+      const matches = profiles.map(otherProfile => {
         const mbtiScore = getMbtiCompatibility(userProfile.mbti, otherProfile.mbti);
         const iljuScore = calculateIljuCompatibility(userProfile.ilju, otherProfile.ilju);
         const totalScore = Math.round(mbtiScore * 0.5 + iljuScore * 0.5);
 
-        if (totalScore > bestScore) {
-          bestScore = totalScore;
-          bestMatch = {
-            instagramId: otherProfile.id,
-            mbti: otherProfile.mbti,
-            score: totalScore,
-            mbtiScore,
-            iljuScore
-          };
-        }
-      }
+        return {
+          instagramId: otherProfile.id,
+          theirMbti: otherProfile.mbti,
+          theirIlju: otherProfile.ilju,
+          score: totalScore,
+          mbtiScore,
+          iljuScore
+        };
+      });
 
-      if (bestMatch) {
-        setMatch(bestMatch);
-        await updateCheckin(userId, { matched_with: bestMatch.instagramId });
-      } else {
-        setNoMatch(true);
-      }
+      matches.sort((a, b) => b.score - a.score);
+      const top3 = matches.slice(0, 3);
+
+      setTopMatches(top3);
+      setNoMatch(top3.length === 0);
     } catch (err) {
       console.error('Matching error:', err);
       setNoMatch(true);
     }
     setLoading(false);
-  };
+  }, [userId, userProfile]);
 
-  const getCompatibilityComment = (score) => {
-    if (score >= 90) return '운명적인 만남! 꼭 대화를 나눠보세요.';
-    if (score >= 80) return '아주 좋은 궁합이에요. 분명 통하는 게 있을 거예요.';
-    if (score >= 70) return '서로의 에너지가 잘 맞아요. 편안한 대화가 될 거예요.';
-    if (score >= 60) return '좋은 밸런스를 이루는 조합이에요.';
-    if (score >= 50) return '서로 다른 매력이 끌릴 수 있는 관계예요.';
-    return '새로운 시각을 열어줄 수 있는 만남이에요.';
-  };
+  useEffect(() => {
+    findMatches();
+
+    // Poll every 30 seconds for real-time updates
+    intervalRef.current = setInterval(() => {
+      findMatches();
+    }, 30000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [findMatches]);
 
   const getScoreColor = (score) => {
     if (score >= 80) return '#ff6b6b';
     if (score >= 60) return 'var(--color-gold)';
     return 'var(--color-text-dim)';
+  };
+
+  const getRankEmoji = (idx) => {
+    const emojis = ['1st', '2nd', '3rd'];
+    return emojis[idx] || '';
+  };
+
+  const getRankStyle = (idx) => {
+    if (idx === 0) return { color: '#FFD700', fontWeight: 700 };
+    if (idx === 1) return { color: '#C0C0C0', fontWeight: 600 };
+    return { color: '#CD7F32', fontWeight: 500 };
   };
 
   if (loading) {
@@ -117,135 +130,232 @@ export default function Matching({ userId, userProfile }) {
           아직 오늘의 인연이 도착하지 않았어요
         </p>
         <p className="text-dim text-sm">
-          잠시 후 다시 확인해보세요.
+          잠시 후 다시 확인해보세요.<br />
+          <span className="text-xs text-muted">30초마다 자동 갱신됩니다</span>
         </p>
         <button
           className="btn-secondary mt-24"
-          onClick={findMatch}
+          onClick={() => { setLoading(true); findMatches(); }}
           style={{ maxWidth: 200, margin: '24px auto 0' }}
         >
-          다시 확인
+          지금 확인
         </button>
       </div>
     );
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      style={{ padding: '20px 0' }}
-    >
+    <div style={{ padding: '20px 0' }}>
       <div className="text-center mb-16">
         <p className="text-xs text-muted" style={{ letterSpacing: 2 }}>
-          TODAY'S MATCH
+          TODAY'S TOP MATCHES
+        </p>
+        <p className="text-xs text-muted mt-8">
+          실시간 갱신 중 (30초 간격)
         </p>
       </div>
 
-      <div
-        className="card"
-        style={{
-          background: 'linear-gradient(135deg, #1a1520, #14141f)',
-          border: '1px solid var(--color-gold-dark)',
-          textAlign: 'center',
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
-        <div
+      {topMatches.map((match, idx) => (
+        <motion.div
+          key={match.instagramId}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: idx * 0.15 }}
+          className="card"
           style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: 2,
-            background: 'linear-gradient(90deg, transparent, var(--color-gold), transparent)'
+            marginBottom: 12,
+            background: idx === 0
+              ? 'linear-gradient(135deg, #1a1520, #14141f)'
+              : 'var(--color-bg-card)',
+            border: `1px solid ${idx === 0 ? 'var(--color-gold-dark)' : 'var(--color-border)'}`,
+            position: 'relative',
+            overflow: 'hidden',
+            cursor: 'pointer'
           }}
-        />
+          onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+        >
+          {idx === 0 && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 2,
+                background: 'linear-gradient(90deg, transparent, var(--color-gold), transparent)'
+              }}
+            />
+          )}
 
-        <div style={{ marginBottom: 20 }}>
-          <span
-            style={{
-              fontSize: 48,
-              fontWeight: 700,
-              color: getScoreColor(match.score),
-              lineHeight: 1
-            }}
-          >
-            {match.score}
-          </span>
-          <span className="text-dim text-sm">점</span>
-        </div>
-
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-          <div style={{ flex: 1 }}>
-            <p className="text-xs text-muted mb-8">MBTI</p>
-            <div style={{
-              height: 4,
-              background: 'var(--color-bg)',
-              borderRadius: 2,
-              overflow: 'hidden'
-            }}>
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${match.mbtiScore}%` }}
-                transition={{ delay: 0.3, duration: 0.8 }}
-                style={{
-                  height: '100%',
-                  background: 'var(--color-gold)',
-                  borderRadius: 2
-                }}
-              />
+          {/* Header: Rank + Score + Instagram */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 14, ...getRankStyle(idx) }}>
+                {getRankEmoji(idx)}
+              </span>
+              <div>
+                <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 16 }}>
+                  @{match.instagramId}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-muted mt-8">{match.mbtiScore}점</p>
-          </div>
-          <div style={{ flex: 1 }}>
-            <p className="text-xs text-muted mb-8">사주</p>
-            <div style={{
-              height: 4,
-              background: 'var(--color-bg)',
-              borderRadius: 2,
-              overflow: 'hidden'
-            }}>
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${match.iljuScore}%` }}
-                transition={{ delay: 0.5, duration: 0.8 }}
+            <div style={{ textAlign: 'right' }}>
+              <span
                 style={{
-                  height: '100%',
-                  background: 'var(--color-gold)',
-                  borderRadius: 2
+                  fontSize: 28,
+                  fontWeight: 700,
+                  color: getScoreColor(match.score),
+                  lineHeight: 1
                 }}
-              />
+              >
+                {match.score}
+              </span>
+              <span className="text-dim text-xs">점</span>
             </div>
-            <p className="text-xs text-muted mt-8">{match.iljuScore}점</p>
           </div>
-        </div>
 
-        <div style={{
-          padding: '16px',
-          background: 'rgba(212, 168, 67, 0.08)',
-          borderRadius: 'var(--radius-sm)',
-          marginBottom: 16
-        }}>
-          <p className="text-xs text-muted mb-8">상대방 인스타그램</p>
-          <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 18 }}>
-            @{match.instagramId}
+          {/* Score bars */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+            <div style={{ flex: 1 }}>
+              <p className="text-xs text-muted mb-8">MBTI {match.mbtiScore}점</p>
+              <div style={{
+                height: 4,
+                background: 'var(--color-bg)',
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${match.mbtiScore}%` }}
+                  transition={{ delay: 0.3 + idx * 0.15, duration: 0.8 }}
+                  style={{
+                    height: '100%',
+                    background: 'var(--color-gold)',
+                    borderRadius: 2
+                  }}
+                />
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p className="text-xs text-muted mb-8">사주 {match.iljuScore}점</p>
+              <div style={{
+                height: 4,
+                background: 'var(--color-bg)',
+                borderRadius: 2,
+                overflow: 'hidden'
+              }}>
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${match.iljuScore}%` }}
+                  transition={{ delay: 0.5 + idx * 0.15, duration: 0.8 }}
+                  style={{
+                    height: '100%',
+                    background: 'var(--color-gold)',
+                    borderRadius: 2
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs text-muted mt-8" style={{ textAlign: 'center' }}>
+            {expandedIdx === idx ? '접기 ▲' : '상세보기 ▼'}
           </p>
-        </div>
 
-        <p className="text-dim text-sm" style={{ lineHeight: 1.6, fontStyle: 'italic' }}>
-          "{getCompatibilityComment(match.score)}"
-        </p>
-      </div>
+          {/* Expanded Details */}
+          {expandedIdx === idx && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              transition={{ duration: 0.3 }}
+              style={{ marginTop: 16 }}
+            >
+              {/* MBTI Details */}
+              <div style={{
+                padding: 16,
+                background: 'rgba(212, 168, 67, 0.05)',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: 12
+              }}>
+                <p className="text-xs text-muted mb-8" style={{ letterSpacing: 1 }}>MBTI 궁합</p>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <p className="text-xs text-muted">나</p>
+                    <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 18 }}>
+                      {userProfile.mbti}
+                    </p>
+                  </div>
+                  <span className="text-dim" style={{ fontSize: 20 }}>×</span>
+                  <div style={{ textAlign: 'center' }}>
+                    <p className="text-xs text-muted">상대</p>
+                    <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 18 }}>
+                      {match.theirMbti}
+                    </p>
+                  </div>
+                  <span className="text-dim" style={{ fontSize: 14, margin: '0 4px' }}>=</span>
+                  <div style={{ textAlign: 'center' }}>
+                    <p style={{ color: getScoreColor(match.mbtiScore), fontWeight: 700, fontSize: 18 }}>
+                      {match.mbtiScore}점
+                    </p>
+                    <p style={{ color: getScoreColor(match.mbtiScore), fontSize: 12, fontWeight: 600 }}>
+                      {getMbtiEvalLabel(match.mbtiScore)}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-dim text-xs" style={{ lineHeight: 1.6, fontStyle: 'italic' }}>
+                  "{getMbtiRelationship(match.mbtiScore)}"
+                </p>
+              </div>
+
+              {/* Saju Details */}
+              <div style={{
+                padding: 16,
+                background: 'rgba(212, 168, 67, 0.05)',
+                borderRadius: 'var(--radius-sm)'
+              }}>
+                <p className="text-xs text-muted mb-8" style={{ letterSpacing: 1 }}>사주 궁합 (일주 오행)</p>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <p className="text-xs text-muted">나</p>
+                    <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 16 }}>
+                      {formatIljuDisplay(userProfile.ilju)}
+                    </p>
+                    <p className="text-xs text-muted">{formatOhaengDisplay(userProfile.ilju)}</p>
+                  </div>
+                  <span className="text-dim" style={{ fontSize: 20 }}>×</span>
+                  <div style={{ textAlign: 'center' }}>
+                    <p className="text-xs text-muted">상대</p>
+                    <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 16 }}>
+                      {formatIljuDisplay(match.theirIlju)}
+                    </p>
+                    <p className="text-xs text-muted">{formatOhaengDisplay(match.theirIlju)}</p>
+                  </div>
+                  <span className="text-dim" style={{ fontSize: 14, margin: '0 4px' }}>=</span>
+                  <div style={{ textAlign: 'center' }}>
+                    <p style={{ color: getScoreColor(match.iljuScore), fontWeight: 700, fontSize: 18 }}>
+                      {match.iljuScore}점
+                    </p>
+                    <p style={{ color: getScoreColor(match.iljuScore), fontSize: 12, fontWeight: 600 }}>
+                      {getSajuEvalLabel(match.iljuScore)}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-dim text-xs" style={{ lineHeight: 1.6, fontStyle: 'italic' }}>
+                  "{getSajuRelationship(match.iljuScore)}"
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </motion.div>
+      ))}
 
       <button
         className="btn-secondary mt-16"
-        onClick={findMatch}
+        onClick={() => { setLoading(true); findMatches(); }}
         style={{ maxWidth: 200, margin: '16px auto 0', display: 'block' }}
       >
-        새로고침
+        지금 새로고침
       </button>
-    </motion.div>
+    </div>
   );
 }

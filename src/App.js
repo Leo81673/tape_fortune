@@ -71,16 +71,23 @@ function App() {
       fortune_opened: true,
       fortune_message: result.message,
       coupon_won: result.coupon,
-      collected_item: result.cardId
+      collected_item: result.cardId,
+      horoscope: result.horoscope || null
     }));
 
     setUserProfile(prev => {
       if (!prev) return prev;
       const currentCollection = prev.collection || [];
-      if (currentCollection.includes(result.cardId)) {
-        return prev;
-      }
-      return { ...prev, collection: [...currentCollection, result.cardId] };
+      const currentCounts = prev.collection_counts || {};
+      const cardId = result.cardId;
+      const newCount = Math.min((currentCounts[cardId] || 0) + 1, 10);
+      return {
+        ...prev,
+        collection: currentCollection.includes(cardId)
+          ? currentCollection
+          : [...currentCollection, cardId],
+        collection_counts: { ...currentCounts, [cardId]: newCount }
+      };
     });
   };
 
@@ -202,7 +209,7 @@ function App() {
         checkinData={checkinData}
         onProfileUpdated={handleProfileUpdated}
         onFortuneOpened={handleFortuneOpened}
-        couponProbability={adminConfig?.coupon_probability}
+        adminConfig={adminConfig}
         onLogoTap={handleLogoTap}
       />
     );
