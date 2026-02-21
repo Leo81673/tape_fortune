@@ -92,6 +92,7 @@ export async function openFortuneForToday(instagramId, fortuneData) {
 
   return runTransaction(db, async (transaction) => {
     const checkinSnap = await transaction.get(checkinRef);
+    const userSnap = await transaction.get(userRef);
     const isTester = instagramId.toLowerCase().startsWith('tester');
 
     if (!checkinSnap.exists() && !isTester) {
@@ -131,6 +132,12 @@ export async function openFortuneForToday(instagramId, fortuneData) {
       updateData.horoscope = fortuneData.horoscope;
     }
 
+    // Update collection: add card and increment count
+    const userData = userSnap.data() || {};
+    const collectionCounts = userData.collection_counts || {};
+    const currentCount = collectionCounts[fortuneData.cardId] || 0;
+    const newCount = Math.min(currentCount + 1, 10);
+
     if (checkinSnap.exists()) {
       transaction.update(checkinRef, updateData);
     } else {
@@ -140,13 +147,6 @@ export async function openFortuneForToday(instagramId, fortuneData) {
         ...updateData
       });
     }
-
-    // Update collection: add card and increment count
-    const userSnap = await transaction.get(userRef);
-    const userData = userSnap.data() || {};
-    const collectionCounts = userData.collection_counts || {};
-    const currentCount = collectionCounts[fortuneData.cardId] || 0;
-    const newCount = Math.min(currentCount + 1, 10);
 
     transaction.update(userRef, {
       collection: arrayUnion(fortuneData.cardId),
