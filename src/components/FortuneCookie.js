@@ -7,7 +7,8 @@ import {
   saveCoupon,
   getUserCoupons,
   cleanExpiredCoupons,
-  logFortuneDebugEvent
+  logFortuneDebugEvent,
+  markCouponAsUsed
 } from '../services/firestoreService';
 import { generateDailyHoroscope } from '../utils/horoscope';
 
@@ -15,7 +16,7 @@ export default function FortuneCookie({
   userId, userProfile, checkinData, onFortuneOpened,
   adminConfig
 }) {
-  const isTester = userId?.toLowerCase().startsWith('tester');
+  const isTester = userId?.toLowerCase() === 'tester';
 
   const [phase, setPhase] = useState(
     (checkinData?.fortune_opened && !isTester) ? 'result' : 'closed'
@@ -33,7 +34,9 @@ export default function FortuneCookie({
   const [collectionCoupon, setCollectionCoupon] = useState(null);
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
-  const [debugStep, setDebugStep] = useState('idle');
+  const [rouletteFailed, setRouletteFailed] = useState(false);
+  const [showCouponWinModal, setShowCouponWinModal] = useState(false);
+  const [, setDebugStep] = useState('idle');
   const [debugError, setDebugError] = useState('');
   const persistedOpened = Boolean(checkinData?.fortune_opened && !isTester);
   const prevPersistedOpenedRef = useRef(persistedOpened);
@@ -121,6 +124,7 @@ export default function FortuneCookie({
   }, [adminConfig]);
 
   const couponTimerMinutes = adminConfig?.coupon_timer_minutes || 30;
+  const defaultCardProbability = 100 / TAROT_CARDS.length;
 
   // Card settings from admin (per-card probability)
   const cardSettings = useMemo(() => {
@@ -177,9 +181,11 @@ export default function FortuneCookie({
     }
 
     setPhase('cracking');
+    setRouletteFailed(false);
+    setShowCouponWinModal(false);
     trackFortuneStep('ui.phase_cracking');
 
-    const rouletteSequence = ['룰렛 회전 중...', '이번에는?!', '행운을 확인하는 중...'];
+    const rouletteSequence = ['쿠폰 룰렛 회전 중...', '이번엔 꼭 나와라...', '행운을 확인하는 중...'];
     let rouletteIndex = 0;
     setRouletteLabel(rouletteSequence[0]);
     const rouletteTimer = setInterval(() => {
@@ -199,6 +205,7 @@ export default function FortuneCookie({
       name: wonCoupon.name,
       text: wonCoupon.text
     } : null;
+    setRouletteFailed(!couponData);
 
     // Generate horoscope if user has birthday
     const horoscope = generateDailyHoroscope(userProfile);
@@ -285,10 +292,34 @@ export default function FortuneCookie({
       clearInterval(rouletteTimer);
       setRouletteLabel(couponData ? `${couponData.name} 당첨!` : '다음 기회에!');
       setPhase('result');
+      setShowCouponWinModal(Boolean(couponData));
       trackFortuneStep('done.result_visible');
       if (onFortuneOpened) onFortuneOpened(result);
       loadActiveCoupons();
     }, 2100);
+  };
+
+  const formatProbability = (probability) => `${Number(probability || 0).toFixed(2)}%`;
+
+  const getCardProbability = (cardId) => {
+    const configured = cardSettings[cardId]?.probability;
+    return configured ?? defaultCardProbability;
+  };
+
+  const getCouponProbability = (coupon) => {
+    if (!coupon?.id) return null;
+    const configuredCoupon = fortuneCoupons.find((item) => item.id === coupon.id);
+    return configuredCoupon?.probability != null ? configuredCoupon.probability * 100 : null;
+  };
+
+  const handleMarkCouponUsed = async (coupon) => {
+    try {
+      await markCouponAsUsed(userId, coupon);
+      await loadActiveCoupons();
+    } catch (err) {
+      console.error('Failed to mark coupon as used:', err);
+      alert('쿠폰 상태를 업데이트하지 못했습니다. 다시 시도해주세요.');
+    }
   };
 
   const formatTimer = (ms) => {
@@ -334,10 +365,7 @@ export default function FortuneCookie({
               🥠
             </motion.button>
             <p className="text-muted text-xs mt-16">탭하여 열기</p>
-            <p className="text-xs mt-8" style={{ color: 'var(--color-text-muted)' }}>
-              디버그 단계: {debugStep}
-            </p>
-            {debugError && (
+            {debugError && isTester && (
               <p className="text-xs mt-8" style={{ color: '#ff7a7a' }}>
                 {debugError}
               </p>
@@ -474,6 +502,31 @@ export default function FortuneCookie({
               </motion.div>
             )}
 
+            {!horoscope && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 }}
+                className="card mt-16"
+                style={{
+                  background: 'linear-gradient(135deg, #14141f, #1a1520)',
+                  border: '1px solid var(--color-border)',
+                  textAlign: 'center'
+                }}
+              >
+                <p className="text-xs text-muted mb-8" style={{ letterSpacing: 1 }}>
+                  오늘의 운세
+                </p>
+                <div style={{ fontSize: 26, marginBottom: 6 }}>🔐</div>
+                <p className="text-dim text-sm" style={{ lineHeight: 1.6 }}>
+                  프로필 정보가 없어 오늘의 운세를 준비하지 못했어요.
+                </p>
+                <p className="text-xs text-muted mt-8">
+                  프로필 탭에서 MBTI와 생년월일을 입력하면 내 운세를 볼 수 있어요.
+                </p>
+              </motion.div>
+            )}
+
             {/* Fortune Coupon */}
             {fortuneResult.coupon && (
               <motion.div
@@ -494,6 +547,11 @@ export default function FortuneCookie({
                 <p className="text-dim text-sm mt-8">
                   {fortuneResult.coupon.text}
                 </p>
+                {fortuneResult.coupon.name?.includes('할인') && getCouponProbability(fortuneResult.coupon) != null && (
+                  <p className="text-xs text-muted mt-8">
+                    획득 확률 : {formatProbability(getCouponProbability(fortuneResult.coupon))}
+                  </p>
+                )}
                 <p className="text-xs text-muted mt-8">
                   @{userId}
                 </p>
@@ -516,7 +574,7 @@ export default function FortuneCookie({
                   textAlign: 'center'
                 }}
               >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🃏</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🎟️</div>
                 <p style={{ color: '#4a90d9', fontWeight: 700, fontSize: 16 }}>
                   새 카드 획득 쿠폰!
                 </p>
@@ -525,6 +583,28 @@ export default function FortuneCookie({
                 </p>
                 <p className="text-xs text-muted mt-8">
                   @{userId}
+                </p>
+              </motion.div>
+            )}
+
+            {!fortuneResult.coupon && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="card mt-16"
+                style={{
+                  background: 'linear-gradient(135deg, #1b1520, #14141f)',
+                  border: '1px solid var(--color-border)',
+                  textAlign: 'center'
+                }}
+              >
+                <div style={{ fontSize: 30, marginBottom: 8 }}>{rouletteFailed ? '🥲' : '😌'}</div>
+                <p style={{ color: 'var(--color-gold-light)', fontWeight: 700, fontSize: 16 }}>
+                  쿠폰 획득 실패
+                </p>
+                <p className="text-dim text-sm mt-8">
+                  이번엔 아쉽게도 쿠폰이 나오지 않았어요. 다음 룰렛에서 행운을 노려보세요!
                 </p>
               </motion.div>
             )}
@@ -546,6 +626,9 @@ export default function FortuneCookie({
                   {tarotCard.id}. {tarotCard.name}
                 </p>
                 <p className="text-dim text-sm">{tarotCard.nameKr}</p>
+                <p className="text-xs text-muted mt-8">
+                  획득 확률 : {formatProbability(getCardProbability(tarotCard.id))}
+                </p>
                 <p className="text-muted text-xs mt-8">{tarotCard.meaning}</p>
               </motion.div>
             )}
@@ -613,11 +696,65 @@ export default function FortuneCookie({
                 }}>
                   남은 시간: {formatTimer(timeLeft)}
                 </p>
+                <button
+                  className="btn-secondary mt-8"
+                  onClick={() => handleMarkCouponUsed(coupon)}
+                  disabled={Boolean(coupon.used_at)}
+                  style={{
+                    maxWidth: 160,
+                    margin: '8px auto 0',
+                    opacity: coupon.used_at ? 0.4 : 0.6,
+                    cursor: coupon.used_at ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {coupon.used_at ? '사용 완료됨' : '사용 완료'}
+                </button>
               </div>
             );
           })}
         </div>
       )}
+
+      <AnimatePresence>
+        {showCouponWinModal && fortuneResult?.coupon && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.65)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 999
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="card"
+              style={{ width: '90%', maxWidth: 320, textAlign: 'center' }}
+            >
+              <div style={{ fontSize: 34, marginBottom: 8 }}>🎉</div>
+              <p style={{ color: 'var(--color-gold)', fontWeight: 700, fontSize: 18 }}>
+                쿠폰을 획득했어요!
+              </p>
+              <p className="text-dim text-sm mt-8">
+                {fortuneResult.coupon.name} · {fortuneResult.coupon.text}
+              </p>
+              <button
+                className="btn-primary mt-16"
+                onClick={() => setShowCouponWinModal(false)}
+              >
+                확인
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

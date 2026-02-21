@@ -16,7 +16,7 @@ const TABS = [
 export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, adminConfig, onLogoTap, onTesterResetComplete }) {
   const [activeTab, setActiveTab] = useState('fortune');
   const [resettingTester, setResettingTester] = useState(false);
-  const isTester = userId?.toLowerCase().startsWith('tester');
+  const isTester = userId?.toLowerCase() === 'tester';
   const [fortuneOpened, setFortuneOpened] = useState(
     (checkinData?.fortune_opened && !isTester) || false
   );
