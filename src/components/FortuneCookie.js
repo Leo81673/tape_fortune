@@ -36,6 +36,7 @@ export default function FortuneCookie({
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
   const [rouletteFailed, setRouletteFailed] = useState(false);
   const [showCouponWinModal, setShowCouponWinModal] = useState(false);
+  const [showCollectionCouponModal, setShowCollectionCouponModal] = useState(false);
   const [, setDebugStep] = useState('idle');
   const [debugError, setDebugError] = useState('');
   const persistedOpened = Boolean(checkinData?.fortune_opened && !isTester);
@@ -183,6 +184,7 @@ export default function FortuneCookie({
     setPhase('cracking');
     setRouletteFailed(false);
     setShowCouponWinModal(false);
+    setShowCollectionCouponModal(false);
     trackFortuneStep('ui.phase_cracking');
 
     const rouletteSequence = ['쿠폰 룰렛 회전 중...', '이번엔 꼭 나와라...', '행운을 확인하는 중...'];
@@ -261,6 +263,7 @@ export default function FortuneCookie({
           created_at: Date.now()
         };
         setCollectionCoupon(collCouponData);
+        setShowCollectionCouponModal(true);
         await saveCoupon(userId, collCouponData);
       } catch (err) {
         console.error('Failed to save collection coupon:', err);
@@ -292,7 +295,7 @@ export default function FortuneCookie({
       clearInterval(rouletteTimer);
       setRouletteLabel(couponData ? `${couponData.name} 당첨!` : '다음 기회에!');
       setPhase('result');
-      setShowCouponWinModal(Boolean(couponData));
+      setShowCouponWinModal(Boolean(couponData && isDiscountCoupon(couponData)));
       trackFortuneStep('done.result_visible');
       if (onFortuneOpened) onFortuneOpened(result);
       loadActiveCoupons();
@@ -310,6 +313,11 @@ export default function FortuneCookie({
     if (!coupon?.id) return null;
     const configuredCoupon = fortuneCoupons.find((item) => item.id === coupon.id);
     return configuredCoupon?.probability != null ? configuredCoupon.probability * 100 : null;
+  };
+
+  const isDiscountCoupon = (coupon) => {
+    if (!coupon) return false;
+    return coupon.name?.includes('할인') || coupon.id?.includes('discount') || coupon.id === 'coupon_2';
   };
 
   const handleMarkCouponUsed = async (coupon) => {
@@ -528,7 +536,7 @@ export default function FortuneCookie({
             )}
 
             {/* Fortune Coupon */}
-            {fortuneResult.coupon && (
+            {fortuneResult.coupon && !isDiscountCoupon(fortuneResult.coupon) && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -557,32 +565,6 @@ export default function FortuneCookie({
                 </p>
                 <p className="text-dim text-xs mt-4">
                   바텐더에게 이 화면을 보여주세요
-                </p>
-              </motion.div>
-            )}
-
-            {/* Collection Coupon (first-time card) */}
-            {collectionCoupon && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.5 }}
-                className="card mt-16"
-                style={{
-                  background: 'linear-gradient(135deg, #0a1a2a, #001420)',
-                  border: '1px solid #4a90d9',
-                  textAlign: 'center'
-                }}
-              >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🎟️</div>
-                <p style={{ color: '#4a90d9', fontWeight: 700, fontSize: 16 }}>
-                  새 카드 획득 쿠폰!
-                </p>
-                <p className="text-dim text-sm mt-8">
-                  {collectionCoupon.text}
-                </p>
-                <p className="text-xs text-muted mt-8">
-                  @{userId}
                 </p>
               </motion.div>
             )}
@@ -618,7 +600,7 @@ export default function FortuneCookie({
                 className="card mt-16"
                 style={{ textAlign: 'center' }}
               >
-                <p className="text-xs text-muted mb-8">수집 카드 획득</p>
+                <p className="text-xs text-muted mb-8">타로 카드 획득</p>
                 <div style={{ fontSize: 48, marginBottom: 8 }}>
                   {tarotCard.emoji}
                 </div>
@@ -641,6 +623,7 @@ export default function FortuneCookie({
                   setPhase('closed');
                   setFortuneResult(null);
                   setCollectionCoupon(null);
+                  setShowCollectionCouponModal(false);
                 }}
                 style={{ maxWidth: 200, margin: '16px auto 0' }}
               >
@@ -665,49 +648,58 @@ export default function FortuneCookie({
           </p>
           {activeCoupons.map((coupon, idx) => {
             const timeLeft = coupon.expires_at - now;
+            const used = Boolean(coupon.used_at);
             if (timeLeft <= 0) return null;
             return (
               <div
                 key={idx}
                 className="card mb-12"
                 style={{
-                  background: coupon.type === 'collection'
-                    ? 'linear-gradient(135deg, #0a1a2a, #001420)'
-                    : 'linear-gradient(135deg, #2a1a0a, #1a1400)',
-                  border: `1px solid ${coupon.type === 'collection' ? '#4a90d9' : 'var(--color-gold)'}`,
+                  background: used
+                    ? 'linear-gradient(135deg, #2f2f2f, #1f1f1f)'
+                    : coupon.type === 'collection'
+                      ? 'linear-gradient(135deg, #0a1a2a, #001420)'
+                      : 'linear-gradient(135deg, #2a1a0a, #1a1400)',
+                  border: used
+                    ? '1px solid #666'
+                    : `1px solid ${coupon.type === 'collection' ? '#4a90d9' : 'var(--color-gold)'}`,
                   textAlign: 'center',
                   padding: 16
                 }}
               >
                 <p style={{
-                  color: coupon.type === 'collection' ? '#4a90d9' : 'var(--color-gold)',
+                  color: used
+                    ? '#b8b8b8'
+                    : coupon.type === 'collection' ? '#4a90d9' : 'var(--color-gold)',
                   fontWeight: 700,
                   fontSize: 14
                 }}>
                   {coupon.name || coupon.card_name || '쿠폰'}
                 </p>
-                <p className="text-dim text-xs mt-4">{coupon.text}</p>
-                <p className="text-xs mt-4" style={{ color: 'var(--color-text-muted)' }}>
+                <p className="text-dim text-xs mt-4" style={{ color: used ? '#9f9f9f' : 'var(--color-text-dim)' }}>{coupon.text}</p>
+                <p className="text-xs mt-4" style={{ color: used ? '#8e8e8e' : 'var(--color-text-muted)' }}>
                   @{coupon.instagram_id}
                 </p>
                 <p className="text-xs mt-4" style={{
-                  color: timeLeft < 300000 ? 'var(--color-error)' : 'var(--color-gold-light)',
+                  color: used
+                    ? '#b3b3b3'
+                    : timeLeft < 300000 ? 'var(--color-error)' : 'var(--color-gold-light)',
                   fontWeight: 700
                 }}>
-                  남은 시간: {formatTimer(timeLeft)}
+                  {used ? '사용 완료된 쿠폰' : `남은 시간: ${formatTimer(timeLeft)}`}
                 </p>
                 <button
                   className="btn-secondary mt-8"
                   onClick={() => handleMarkCouponUsed(coupon)}
-                  disabled={Boolean(coupon.used_at)}
+                  disabled={used}
                   style={{
                     maxWidth: 160,
                     margin: '8px auto 0',
-                    opacity: coupon.used_at ? 0.4 : 0.6,
-                    cursor: coupon.used_at ? 'not-allowed' : 'pointer'
+                    opacity: used ? 0.45 : 0.6,
+                    cursor: used ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  {coupon.used_at ? '사용 완료됨' : '사용 완료'}
+                  {used ? '사용 완료됨' : '사용 완료'}
                 </button>
               </div>
             );
@@ -745,9 +737,53 @@ export default function FortuneCookie({
               <p className="text-dim text-sm mt-8">
                 {fortuneResult.coupon.name} · {fortuneResult.coupon.text}
               </p>
+              {getCouponProbability(fortuneResult.coupon) != null && (
+                <p className="text-xs text-muted mt-8">
+                  획득 확률 : {formatProbability(getCouponProbability(fortuneResult.coupon))}
+                </p>
+              )}
               <button
                 className="btn-primary mt-16"
                 onClick={() => setShowCouponWinModal(false)}
+              >
+                확인
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCollectionCouponModal && collectionCoupon && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0, 0, 0, 0.65)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 999
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="card"
+              style={{ width: '90%', maxWidth: 320, textAlign: 'center' }}
+            >
+              <div style={{ fontSize: 34, marginBottom: 8 }}>🎟️</div>
+              <p style={{ color: '#4a90d9', fontWeight: 700, fontSize: 18 }}>
+                새 카드 획득 쿠폰!
+              </p>
+              <p className="text-dim text-sm mt-8">{collectionCoupon.text}</p>
+              <button
+                className="btn-primary mt-16"
+                onClick={() => setShowCollectionCouponModal(false)}
               >
                 확인
               </button>
