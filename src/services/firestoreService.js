@@ -92,14 +92,21 @@ export async function openFortuneForToday(instagramId, fortuneData) {
 
   return runTransaction(db, async (transaction) => {
     const checkinSnap = await transaction.get(checkinRef);
-    if (!checkinSnap.exists()) {
+    const isTester = instagramId.toLowerCase().startsWith('tester');
+
+    if (!checkinSnap.exists() && !isTester) {
       return { opened: false, reason: 'not_checked_in' };
     }
 
-    const currentCheckin = checkinSnap.data();
-
-    // Allow tester accounts to open unlimited fortune cookies
-    const isTester = instagramId.toLowerCase().startsWith('tester');
+    const currentCheckin = checkinSnap.exists()
+      ? checkinSnap.data()
+      : {
+          fortune_opened: false,
+          fortune_message: null,
+          coupon_won: null,
+          collected_item: null,
+          matched_with: null
+        };
     if (currentCheckin.fortune_opened && !isTester) {
       return {
         opened: false,
@@ -124,7 +131,15 @@ export async function openFortuneForToday(instagramId, fortuneData) {
       updateData.horoscope = fortuneData.horoscope;
     }
 
-    transaction.update(checkinRef, updateData);
+    if (checkinSnap.exists()) {
+      transaction.update(checkinRef, updateData);
+    } else {
+      transaction.set(checkinRef, {
+        checked_in_at: serverTimestamp(),
+        matched_with: null,
+        ...updateData
+      });
+    }
 
     // Update collection: add card and increment count
     const userSnap = await transaction.get(userRef);
@@ -243,6 +258,13 @@ export async function updateAdminConfig(data) {
   await updateDoc(doc(db, 'admin', 'config'), data);
 }
 
+export async function regenerateStaffCode() {
+  await updateAdminConfig({
+    daily_staff_code: generateStaffCode(),
+    last_code_update: serverTimestamp()
+  });
+}
+
 export async function resetDaily() {
   const dateKey = getCycleDateKey();
   const usersRef = collection(db, 'daily_checkins', dateKey, 'users');
@@ -254,8 +276,32 @@ export async function resetDaily() {
   await Promise.all(deletePromises);
 
   // Generate new staff code
-  await updateAdminConfig({
-    daily_staff_code: generateStaffCode(),
-    last_code_update: serverTimestamp()
-  });
+  await regenerateStaffCode();
+}
+
+export async function resetTesterData(instagramId) {
+  const userRef = doc(db, 'users', instagramId);
+  const dateKey = getCycleDateKey();
+  const checkinRef = doc(db, 'daily_checkins', dateKey, 'users', instagramId);
+
+  await Promise.all([
+    updateDoc(userRef, {
+      mbti: null,
+      birthday: null,
+      calendar_type: null,
+      ilju: null,
+      collection: [],
+      collection_counts: {},
+      coupons: []
+    }),
+    setDoc(checkinRef, {
+      checked_in_at: serverTimestamp(),
+      fortune_opened: false,
+      fortune_message: null,
+      coupon_won: null,
+      collected_item: null,
+      matched_with: null,
+      horoscope: null
+    }, { merge: true })
+  ]);
 }

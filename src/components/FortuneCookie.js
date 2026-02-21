@@ -26,6 +26,7 @@ export default function FortuneCookie({
   );
   const [collectionCoupon, setCollectionCoupon] = useState(null);
   const [activeCoupons, setActiveCoupons] = useState([]);
+  const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
 
   // Load active coupons on mount (persisted across refresh)
   useEffect(() => {
@@ -102,6 +103,14 @@ export default function FortuneCookie({
 
     setPhase('cracking');
 
+    const rouletteSequence = ['룰렛 회전 중...', '이번에는?!', '행운을 확인하는 중...'];
+    let rouletteIndex = 0;
+    setRouletteLabel(rouletteSequence[0]);
+    const rouletteTimer = setInterval(() => {
+      rouletteIndex = (rouletteIndex + 1) % rouletteSequence.length;
+      setRouletteLabel(rouletteSequence[rouletteIndex]);
+    }, 300);
+
     // Generate fortune
     const ohaeng = userProfile?.ilju?.ohaeng?.cheongan || null;
     const message = getFortuneMessage(ohaeng);
@@ -125,6 +134,7 @@ export default function FortuneCookie({
     try {
       const saveResult = await openFortuneForToday(userId, result);
       if (!saveResult.opened) {
+        clearInterval(rouletteTimer);
         if (saveResult.existing) {
           setFortuneResult(saveResult.existing);
           setPhase('result');
@@ -167,6 +177,7 @@ export default function FortuneCookie({
         await loadActiveCoupons();
       }
     } catch (err) {
+      clearInterval(rouletteTimer);
       console.error('Failed to save fortune result:', err);
       setPhase('closed');
       return;
@@ -174,10 +185,12 @@ export default function FortuneCookie({
 
     // Show cracking animation then reveal
     setTimeout(() => {
+      clearInterval(rouletteTimer);
+      setRouletteLabel(couponData ? `${couponData.name} 당첨!` : '다음 기회에!');
       setPhase('result');
       if (onFortuneOpened) onFortuneOpened(result);
       loadActiveCoupons();
-    }, 1500);
+    }, 2100);
   };
 
   const formatTimer = (ms) => {
@@ -250,7 +263,7 @@ export default function FortuneCookie({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: [0, 1, 1, 0] }}
-              transition={{ duration: 1.5, times: [0, 0.3, 0.7, 1] }}
+              transition={{ duration: 2, times: [0, 0.3, 0.7, 1] }}
               style={{
                 position: 'absolute',
                 left: '50%',
@@ -260,6 +273,9 @@ export default function FortuneCookie({
             >
               <span className="text-gold">✨</span>
             </motion.div>
+            <p className="text-sm mt-16" style={{ color: 'var(--color-gold)' }}>
+              {rouletteLabel}
+            </p>
           </motion.div>
         )}
 

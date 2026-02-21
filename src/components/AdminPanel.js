@@ -4,11 +4,15 @@ import {
   getTodayCheckedInUsers,
   resetDaily,
   updateAdminConfig,
-  getAllUsers
+  getAllUsers,
+  regenerateStaffCode
 } from '../services/firestoreService';
+
 import { getMbtiCompatibility } from '../utils/mbtiCompatibility';
 import { calculateIljuCompatibility } from '../utils/ilju';
 import TAROT_CARDS from '../data/tarotCards';
+
+const MASTER_PASSWORD = 'tapefortune@@';
 
 export default function AdminPanel({ onClose }) {
   const [config, setConfig] = useState(null);
@@ -17,7 +21,11 @@ export default function AdminPanel({ onClose }) {
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [savingLocation, setSavingLocation] = useState(false);
+  const [rotatingStaffCode, setRotatingStaffCode] = useState(false);
   const [activeSection, setActiveSection] = useState('overview');
+  const [masterPasswordInput, setMasterPasswordInput] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [savingAdminPassword, setSavingAdminPassword] = useState(false);
 
   // Fortune coupon editing state
   const [editCoupons, setEditCoupons] = useState([]);
@@ -109,6 +117,51 @@ export default function AdminPanel({ onClose }) {
       alert('초기화에 실패했습니다.');
     }
     setResetting(false);
+  };
+
+  const handleRotateStaffCode = async () => {
+    if (rotatingStaffCode || !config) return;
+    const input = window.prompt('관리자 비밀번호 4자리를 입력하세요');
+    if (input === null) return;
+    if (input !== (config.admin_password || '0000')) {
+      alert('관리자 비밀번호가 올바르지 않습니다.');
+      return;
+    }
+
+    setRotatingStaffCode(true);
+    try {
+      await regenerateStaffCode();
+      await loadData();
+      alert('스태프 코드가 랜덤으로 변경되었습니다.');
+    } catch (err) {
+      console.error('Failed to rotate staff code:', err);
+      alert('스태프 코드 변경에 실패했습니다.');
+    }
+    setRotatingStaffCode(false);
+  };
+
+  const handleChangeAdminPassword = async () => {
+    if (masterPasswordInput !== MASTER_PASSWORD) {
+      alert('마스터 비밀번호가 올바르지 않습니다.');
+      return;
+    }
+    if (!/^\d{4}$/.test(newAdminPassword)) {
+      alert('관리자 비밀번호는 4자리 숫자로 입력해주세요.');
+      return;
+    }
+
+    setSavingAdminPassword(true);
+    try {
+      await updateAdminConfig({ admin_password: newAdminPassword });
+      setConfig(prev => ({ ...prev, admin_password: newAdminPassword }));
+      setMasterPasswordInput('');
+      setNewAdminPassword('');
+      alert('관리자 비밀번호가 변경되었습니다.');
+    } catch (err) {
+      console.error('Failed to change admin password:', err);
+      alert('관리자 비밀번호 변경에 실패했습니다.');
+    }
+    setSavingAdminPassword(false);
   };
 
   // Fortune coupon handlers
@@ -247,6 +300,16 @@ export default function AdminPanel({ onClose }) {
             <p className="text-xs text-muted text-center mt-8">
               매일 밤 9시에 자동 변경됩니다
             </p>
+            <button
+              className="btn-secondary mt-12"
+              onClick={handleRotateStaffCode}
+              disabled={rotatingStaffCode}
+            >
+              {rotatingStaffCode ? '변경 중...' : '스태프 코드 랜덤 수동 변경'}
+            </button>
+            <p className="text-xs text-muted text-center mt-8">
+              버튼 클릭 후 관리자 비밀번호 4자리 재입력 시 즉시 변경됩니다
+            </p>
           </div>
 
           <div className="card mb-16">
@@ -289,7 +352,7 @@ export default function AdminPanel({ onClose }) {
                         )}
                         {user.coupon_won && (
                           <span className="text-xs" style={{ color: 'var(--color-success)' }}>
-                            쿠폰당첨
+                            {`${typeof user.coupon_won === 'object' ? user.coupon_won.name : user.coupon_won} 당첨`}
                           </span>
                         )}
                       </div>
@@ -538,6 +601,37 @@ export default function AdminPanel({ onClose }) {
       {/* Settings Section */}
       {activeSection === 'settings' && (
         <>
+          <div className="card mb-16">
+            <p className="text-xs text-muted mb-8">관리자 비밀번호 변경</p>
+            <input
+              type="password"
+              className="input-field mb-8"
+              value={masterPasswordInput}
+              onChange={(e) => setMasterPasswordInput(e.target.value)}
+              placeholder="마스터 비밀번호"
+            />
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              className="input-field"
+              value={newAdminPassword}
+              onChange={(e) => setNewAdminPassword(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="새 관리자 비밀번호 4자리"
+              style={{ textAlign: 'center', letterSpacing: 6, fontSize: 18 }}
+            />
+            <button
+              className="btn-primary mt-12"
+              onClick={handleChangeAdminPassword}
+              disabled={savingAdminPassword}
+            >
+              {savingAdminPassword ? '변경 중...' : '관리자 비밀번호 변경'}
+            </button>
+            <p className="text-xs text-muted text-center mt-8">
+              마스터 비밀번호 확인 후 관리자 4자리 비밀번호를 변경할 수 있습니다
+            </p>
+          </div>
+
           <div className="card mb-16">
             <p className="text-xs text-muted mb-8">위치 기반 확인</p>
             <button
