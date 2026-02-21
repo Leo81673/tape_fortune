@@ -93,7 +93,7 @@ export async function openFortuneForToday(instagramId, fortuneData) {
   return runTransaction(db, async (transaction) => {
     const checkinSnap = await transaction.get(checkinRef);
     const userSnap = await transaction.get(userRef);
-    const isTester = instagramId.toLowerCase().startsWith('tester');
+    const isTester = instagramId.toLowerCase() === 'tester';
 
     if (!checkinSnap.exists() && !isTester) {
       return { opened: false, reason: 'not_checked_in' };
@@ -189,6 +189,30 @@ export async function cleanExpiredCoupons(instagramId) {
   const now = Date.now();
   const activeCoupons = user.coupons.filter(c => c.expires_at > now);
   await updateDoc(doc(db, 'users', instagramId), { coupons: activeCoupons });
+}
+
+export async function markCouponAsUsed(instagramId, targetCoupon) {
+  const user = await getUser(instagramId);
+  if (!user || !user.coupons) return;
+
+  const coupons = user.coupons.map((coupon) => {
+    const isSameCoupon = (
+      coupon.created_at === targetCoupon.created_at &&
+      coupon.type === targetCoupon.type &&
+      (coupon.coupon_id || coupon.card_id || coupon.text) === (targetCoupon.coupon_id || targetCoupon.card_id || targetCoupon.text)
+    );
+
+    if (!isSameCoupon || coupon.used_at) {
+      return coupon;
+    }
+
+    return {
+      ...coupon,
+      used_at: Date.now()
+    };
+  });
+
+  await updateDoc(doc(db, 'users', instagramId), { coupons });
 }
 
 /**
