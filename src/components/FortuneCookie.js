@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFortuneMessage } from '../data/fortuneMessages';
-import { getRandomTarotCard } from '../data/tarotCards';
 import TAROT_CARDS from '../data/tarotCards';
 import { openFortuneForToday, saveCoupon, getUserCoupons, cleanExpiredCoupons } from '../services/firestoreService';
 import { generateDailyHoroscope } from '../utils/horoscope';
