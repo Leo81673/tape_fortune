@@ -28,6 +28,23 @@ export default function FortuneCookie({
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
 
+  useEffect(() => {
+    if (checkinData?.fortune_opened && !isTester) {
+      setPhase('result');
+      setFortuneResult({
+        message: checkinData.fortune_message,
+        coupon: checkinData.coupon_won,
+        cardId: checkinData.collected_item,
+        horoscope: checkinData.horoscope || null
+      });
+      return;
+    }
+
+    setPhase('closed');
+    setFortuneResult(null);
+    setCollectionCoupon(null);
+  }, [checkinData, isTester]);
+
   // Load active coupons on mount (persisted across refresh)
   useEffect(() => {
     if (userId) {
@@ -99,7 +116,16 @@ export default function FortuneCookie({
 
   const openCookie = async () => {
     if (phase !== 'closed') return;
-    if (checkinData?.fortune_opened && !isTester) return;
+    if (checkinData?.fortune_opened && !isTester) {
+      setFortuneResult({
+        message: checkinData.fortune_message,
+        coupon: checkinData.coupon_won,
+        cardId: checkinData.collected_item,
+        horoscope: checkinData.horoscope || null
+      });
+      setPhase('result');
+      return;
+    }
 
     setPhase('cracking');
 
