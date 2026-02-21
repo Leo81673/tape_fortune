@@ -66,6 +66,18 @@ function App() {
   };
 
   const handleFortuneOpened = (result) => {
+    if (!result) {
+      setCheckinData(prev => ({
+        ...(prev || {}),
+        fortune_opened: false,
+        fortune_message: null,
+        coupon_won: null,
+        collected_item: null,
+        horoscope: null
+      }));
+      return;
+    }
+
     setCheckinData(prev => ({
       ...(prev || {}),
       fortune_opened: true,
@@ -89,6 +101,11 @@ function App() {
         collection_counts: { ...currentCounts, [cardId]: newCount }
       };
     });
+  };
+
+  const handleTesterResetComplete = (profile, checkin) => {
+    setUserProfile(profile);
+    setCheckinData(checkin);
   };
 
   const handleLogoTap = () => {
@@ -211,6 +228,7 @@ function App() {
         onFortuneOpened={handleFortuneOpened}
         adminConfig={adminConfig}
         onLogoTap={handleLogoTap}
+        onTesterResetComplete={handleTesterResetComplete}
       />
     );
   }

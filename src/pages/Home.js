@@ -4,6 +4,7 @@ import FortuneCookie from '../components/FortuneCookie';
 import Collection from '../components/Collection';
 import MbtiProfile from '../components/MbtiProfile';
 import Matching from '../components/Matching';
+import { resetTesterData, getUser, getCheckinStatus } from '../services/firestoreService';
 
 const TABS = [
   { id: 'fortune', label: '포춘쿠키', icon: '🥠' },
@@ -12,8 +13,9 @@ const TABS = [
   { id: 'profile', label: '프로필', icon: '📝' }
 ];
 
-export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, adminConfig, onLogoTap }) {
+export default function Home({ userId, userProfile, checkinData, onProfileUpdated, onFortuneOpened, adminConfig, onLogoTap, onTesterResetComplete }) {
   const [activeTab, setActiveTab] = useState('fortune');
+  const [resettingTester, setResettingTester] = useState(false);
   const isTester = userId?.toLowerCase().startsWith('tester');
   const [fortuneOpened, setFortuneOpened] = useState(
     (checkinData?.fortune_opened && !isTester) || false
@@ -22,6 +24,31 @@ export default function Home({ userId, userProfile, checkinData, onProfileUpdate
   const handleFortuneOpened = (result) => {
     setFortuneOpened(true);
     if (onFortuneOpened) onFortuneOpened(result);
+  };
+
+  const handleTesterReset = async () => {
+    if (!isTester || resettingTester) return;
+    if (!window.confirm('테스터 데이터를 모두 초기화할까요?')) return;
+
+    setResettingTester(true);
+    try {
+      await resetTesterData(userId);
+      const [freshProfile, freshCheckin] = await Promise.all([
+        getUser(userId),
+        getCheckinStatus(userId)
+      ]);
+      if (onProfileUpdated) onProfileUpdated(freshProfile || {});
+      if (onTesterResetComplete) onTesterResetComplete(freshProfile, freshCheckin);
+      setFortuneOpened(false);
+      alert('테스터 데이터가 초기화되었습니다.');
+      if (!freshCheckin?.fortune_opened) {
+        setActiveTab('fortune');
+      }
+    } catch (err) {
+      console.error('Failed to reset tester data:', err);
+      alert('초기화에 실패했습니다.');
+    }
+    setResettingTester(false);
   };
 
   return (
@@ -39,6 +66,16 @@ export default function Home({ userId, userProfile, checkinData, onProfileUpdate
         <p className="text-xs text-muted">
           @{userId}
         </p>
+        {isTester && (
+          <button
+            className="btn-secondary mt-8"
+            onClick={handleTesterReset}
+            disabled={resettingTester}
+            style={{ maxWidth: 220, margin: '8px auto 0', fontSize: 12 }}
+          >
+            {resettingTester ? '초기화 중...' : '테스터 전체 데이터 초기화'}
+          </button>
+        )}
       </div>
 
       {/* Tab content */}
