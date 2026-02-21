@@ -1,5 +1,5 @@
 import {
-  doc, getDoc, setDoc, updateDoc, collection, getDocs,
+  doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc,
   serverTimestamp, query, deleteDoc, runTransaction, arrayUnion
 } from 'firebase/firestore';
 import { db } from './firebase';
@@ -189,6 +189,20 @@ export async function cleanExpiredCoupons(instagramId) {
   const now = Date.now();
   const activeCoupons = user.coupons.filter(c => c.expires_at > now);
   await updateDoc(doc(db, 'users', instagramId), { coupons: activeCoupons });
+}
+
+/**
+ * Best-effort debug logging for fortune flow failures and step tracing.
+ */
+export async function logFortuneDebugEvent(event) {
+  try {
+    await addDoc(collection(db, 'fortune_debug_logs'), {
+      ...event,
+      created_at: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Failed to write fortune debug log:', err);
+  }
 }
 
 export async function getTodayCheckedInUsers() {

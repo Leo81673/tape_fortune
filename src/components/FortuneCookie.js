@@ -2,7 +2,13 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion';
 import { getFortuneMessage } from '../data/fortuneMessages';
 import TAROT_CARDS from '../data/tarotCards';
-import { openFortuneForToday, saveCoupon, getUserCoupons, cleanExpiredCoupons } from '../services/firestoreService';
+import {
+  openFortuneForToday,
+  saveCoupon,
+  getUserCoupons,
+  cleanExpiredCoupons,
+  logFortuneDebugEvent
+} from '../services/firestoreService';
 import { generateDailyHoroscope } from '../utils/horoscope';
 
 export default function FortuneCookie({
@@ -27,8 +33,29 @@ export default function FortuneCookie({
   const [collectionCoupon, setCollectionCoupon] = useState(null);
   const [activeCoupons, setActiveCoupons] = useState([]);
   const [rouletteLabel, setRouletteLabel] = useState('쿠폰 룰렛 준비 중...');
+  const [debugStep, setDebugStep] = useState('idle');
+  const [debugError, setDebugError] = useState('');
   const persistedOpened = Boolean(checkinData?.fortune_opened && !isTester);
   const prevPersistedOpenedRef = useRef(persistedOpened);
+
+  const trackFortuneStep = useCallback((step, details = {}, level = 'info') => {
+    setDebugStep(step);
+    if (level === 'error') {
+      setDebugError(details?.message || '포춘쿠키 처리 중 문제가 발생했습니다.');
+    }
+
+    const logger = level === 'error' ? console.error : console.log;
+    logger(`[FortuneFlow] ${step}`, details);
+
+    logFortuneDebugEvent({
+      user_id: userId,
+      level,
+      step,
+      phase,
+      details,
+      checkin_fortune_opened: Boolean(checkinData?.fortune_opened)
+    });
+  }, [userId, phase, checkinData?.fortune_opened]);
 
   useEffect(() => {
     if (persistedOpened) {
@@ -129,8 +156,16 @@ export default function FortuneCookie({
   };
 
   const openCookie = async () => {
-    if (phase !== 'closed') return;
+    if (phase !== 'closed') {
+      trackFortuneStep('blocked.phase_not_closed', { phase }, 'error');
+      return;
+    }
+
+    setDebugError('');
+    trackFortuneStep('start.open_cookie');
+
     if (checkinData?.fortune_opened && !isTester) {
+      trackFortuneStep('sync.load_existing_result');
       setFortuneResult({
         message: checkinData.fortune_message,
         coupon: checkinData.coupon_won,
@@ -142,6 +177,7 @@ export default function FortuneCookie({
     }
 
     setPhase('cracking');
+    trackFortuneStep('ui.phase_cracking');
 
     const rouletteSequence = ['룰렛 회전 중...', '이번에는?!', '행운을 확인하는 중...'];
     let rouletteIndex = 0;
@@ -169,11 +205,17 @@ export default function FortuneCookie({
 
     const result = { message, coupon: couponData, cardId: card.id, horoscope };
     setFortuneResult(result);
+    trackFortuneStep('generated.result_ready', {
+      hasCoupon: Boolean(couponData),
+      cardId: card.id,
+      hasHoroscope: Boolean(horoscope)
+    });
 
     // Save core fortune result to Firestore
     let saveResult;
     try {
       saveResult = await openFortuneForToday(userId, result);
+      trackFortuneStep('db.open_fortune_response', saveResult);
       if (!saveResult.opened) {
         clearInterval(rouletteTimer);
         if (saveResult.existing) {
@@ -182,12 +224,17 @@ export default function FortuneCookie({
           if (onFortuneOpened) onFortuneOpened(saveResult.existing);
           return;
         }
+        setDebugError('포춘 오픈 저장이 거절되었습니다. 체크인 상태를 확인해주세요.');
+        trackFortuneStep('blocked.open_rejected', {
+          reason: saveResult.reason || 'unknown'
+        }, 'error');
         setPhase('closed');
         return;
       }
     } catch (err) {
       clearInterval(rouletteTimer);
       console.error('Failed to save fortune result:', err);
+      trackFortuneStep('error.db_open_failed', { message: err.message }, 'error');
       setPhase('closed');
       return;
     }
@@ -210,6 +257,7 @@ export default function FortuneCookie({
         await saveCoupon(userId, collCouponData);
       } catch (err) {
         console.error('Failed to save collection coupon:', err);
+        trackFortuneStep('error.collection_coupon_save_failed', { message: err.message }, 'error');
       }
     }
 
@@ -228,6 +276,7 @@ export default function FortuneCookie({
         await loadActiveCoupons();
       } catch (err) {
         console.error('Failed to save fortune coupon:', err);
+        trackFortuneStep('error.fortune_coupon_save_failed', { message: err.message }, 'error');
       }
     }
 
@@ -236,6 +285,7 @@ export default function FortuneCookie({
       clearInterval(rouletteTimer);
       setRouletteLabel(couponData ? `${couponData.name} 당첨!` : '다음 기회에!');
       setPhase('result');
+      trackFortuneStep('done.result_visible');
       if (onFortuneOpened) onFortuneOpened(result);
       loadActiveCoupons();
     }, 2100);
@@ -284,6 +334,14 @@ export default function FortuneCookie({
               🥠
             </motion.button>
             <p className="text-muted text-xs mt-16">탭하여 열기</p>
+            <p className="text-xs mt-8" style={{ color: 'var(--color-text-muted)' }}>
+              디버그 단계: {debugStep}
+            </p>
+            {debugError && (
+              <p className="text-xs mt-8" style={{ color: '#ff7a7a' }}>
+                {debugError}
+              </p>
+            )}
             {isTester && (
               <p className="text-xs mt-8" style={{ color: 'var(--color-gold-dark)' }}>
                 테스터 모드: 무제한 열기 가능
